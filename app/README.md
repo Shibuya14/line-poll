@@ -47,8 +47,7 @@ migrations/         D1のスキーマ。連番で積み上げる
   0001_init.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
-public/ogp3.jpg      LINEに貼ったときのリンクカード画像
-scripts/ogp/        ogp3.jpgの生成元（node scripts/ogp/render.js で再生成）
+public/ogp4.jpg      LINEに貼ったときのリンクカード画像
 wrangler.jsonc.tmpl 設定の雛形（実ファイルは自動生成）
 scripts/            terraform output → wrangler.jsonc の橋渡し
 Makefile            操作はすべてここから

@@ -40,8 +40,7 @@ app/      本体。Cloudflare Workers + D1。ここで作業する
   migrations/        データベースのスキーマ
   public/
     index.html         実際に使う画面（LINE風UI。投票APIに接続済み）
-    ogp3.jpg            LINEに貼ったときのリンクカード画像
-  scripts/ogp/       ogp3.jpgの生成元（ogp3.html + render.js）
+    ogp4.jpg            LINEに貼ったときのリンクカード画像
   Makefile           操作はすべてここから
   setup.sh           初回セットアップを1本で終わらせるスクリプト
 
@@ -124,9 +123,9 @@ vote_cast / vote_changed / vote_withdrawn / page_hidden / poll_closed
 
 ### リンクプレビュー（OGP）
 
-`/p/:id` はLINEなどのクローラーが読みにいっても、静的ファイルをそのまま返さずWorkerが一度介在し、その投票のタイトルを`og:title`に差し込んで返す（`pollShareCard()`）。画像は`public/ogp3.jpg`固定。説明文はあえて「タップして投票に参加」という中立な文言にしてあり、研究目的をリンクカードの時点で参加者に悟らせないようにしている。
+`/p/:id` はLINEなどのクローラーが読みにいっても、静的ファイルをそのまま返さずWorkerが一度介在し、その投票のタイトルを`og:title`に差し込んで返す（`pollShareCard()`）。画像は`public/ogp4.jpg`固定。説明文はあえて「タップして投票に参加」という中立な文言にしてあり、研究目的をリンクカードの時点で参加者に悟らせないようにしている。
 
-LINEは人間が貼った外部サイトのURLを、画像サイズや`og:image:width/height`、`twitter:card`をどう調整しても常にコンパクトな小さいカードで表示する（オープンチャット・通常トークどちらでも同じ）。これは検証済みで、キャッシュや設定の問題ではなくLINE側の仕様と判断している。画像を大きく見せる手段（Flex Message送信、`liff.shareTargetPicker()`など）はBot専用またはオープンチャット非対応で、参加者本人がURLを貼る運用では使えない。そのため今は「小さいカードの中身をLINEの投票機能に近い見た目にする」方向に振っており、`public/ogp3.jpg`はLINEの投票カードを模した投票箱＋チェックマークのアイコン（オリジナル作画、LINEのキャラクター等は不使用）。生成元は`app/scripts/ogp/ogp3.html`＋`render.js`。デザインを直したいときはHTMLを編集して`node scripts/ogp/render.js`で再生成する。
+LINEは人間が貼った外部サイトのURLを、画像サイズや`og:image:width/height`、`twitter:card`をどう調整しても常にコンパクトな小さいカードで表示する（オープンチャット・通常トークどちらでも同じ）。これは検証済みで、キャッシュや設定の問題ではなくLINE側の仕様と判断している。画像を大きく見せる手段（Flex Message送信、`liff.shareTargetPicker()`など）はBot専用またはオープンチャット非対応で、参加者本人がURLを貼る運用では使えない。そのため今は「小さいカードの中身をLINEの投票機能に近い見た目にする」方向に振っており、`public/ogp4.jpg`はLINEの投票箱アイコンを模した画像（正方形に中央クロップ、圧縮のみ実施）。
 
 一度LINEに読み込まれたURLはLINE側でプレビューがキャッシュされるため、OGPの見た目を直した後は**新しい投票URLで確認する**こと。
 
