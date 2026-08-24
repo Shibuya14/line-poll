@@ -46,7 +46,8 @@ infra/              Terraform。D1データベースの宣言
 migrations/         D1のスキーマ。連番で積み上げる
   0001_init.sql
 worker/index.js     API本体。依存パッケージなし
-public/index.html   配線確認用の画面
+public/index.html   実際に使う画面(LINE風UI)
+public/ogp.png       LINEに貼ったときのリンクカード画像
 wrangler.jsonc.tmpl 設定の雛形（実ファイルは自動生成）
 scripts/            terraform output → wrangler.jsonc の橋渡し
 Makefile            操作はすべてここから
@@ -58,61 +59,9 @@ Makefile            操作はすべてここから
 
 ## 手順
 
-### いちばん簡単な方法
+セットアップの手順（自動 `./setup.sh` / 手動 `make bootstrap`〜、env ファイルの作り方）は、プロジェクトルートの `README.md` にまとめてあります。ここから先は、日々の操作と、prod環境の分け方・片付け方だけを載せています。
 
-```bash
-./setup.sh
-```
-
-道具の導入から配備まで、これ1本で終わります。途中で4つの値を聞かれます（CloudflareのアカウントIDとAPIトークン、LINEのチャネルIDとチャネルシークレット）。**何度実行しても壊れません。** 途中で止めた場合も、もう一度実行すれば続きから進みます。
-
-下は、中で何が起きているかを知りたい場合の手順です。
-
-### 1. 準備
-
-Node.js と Terraform（または OpenTofu）が必要です。
-
-```bash
-cp .env.example .env
-cp infra/terraform.tfvars.example infra/terraform.tfvars
-npm install
-```
-
-**アカウントID** は Cloudflare ダッシュボードの Workers & Pages ページ右側、または URL の `dash.cloudflare.com/<ここ>` にある32桁です。`infra/terraform.tfvars` に貼ります。
-
-**APIトークン** は ダッシュボード → 右上のアイコン → 「プロフィール」 → 「API トークン」 → 「トークンを作成する」 から作ります。テンプレートは使わず「カスタムトークンを作成する」を選び、以下の権限を付けます。
-
-| 種類 | 対象 | 権限 |
-|---|---|---|
-| アカウント | Workers スクリプト | 編集 |
-| アカウント | D1 | 編集 |
-
-作ったトークンを `.env` の `CLOUDFLARE_API_TOKEN` に貼ります。**この画面を閉じると二度と表示されません。**
-
-`LINE_CHANNEL_ID` には、検証で使ったLINEログインチャネルのチャネルIDを入れます。
-
-### 2. 構築
-
-```bash
-make bootstrap      # Terraform初期化 → D1作成 → wrangler.jsonc生成
-make secrets        # チャネルシークレットとセッション鍵を登録
-make migrate        # スキーマを適用
-make deploy         # 配備
-```
-
-`make bootstrap` の途中で `terraform apply` が「何を作るか」を表示して確認を求めます。内容を読んで `yes` と入力してください。
-
-### 3. 確認
-
-配備されたURL（`https://poll-dev.<あなた>.workers.dev`）を開くと、配線確認の画面が出ます。
-
-- **サーバーの状態** に `"d1": "ok"` とテーブル名が並んでいれば、データベースまで繋がっています
-- **LINEでログイン** を押して userId が表示されれば、**設計書で唯一残っていた「認可コード → userId の交換」が確認できたことになります**
-- **poll_opened を記録** でイベントがD1に書き込まれます
-
-LINE Developers のコールバックURLに `https://<配備先>/auth/callback` を追加するのを忘れないでください。完全一致でないと弾かれます。
-
-### 4. 日々の操作
+### 日々の操作
 
 ローカルで動かすときは、シークレットを `.dev.vars` に置きます（本番の `make secrets` とは別）。
 

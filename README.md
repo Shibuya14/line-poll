@@ -7,11 +7,34 @@ LINEの投票機能に見た目と操作を揃えたうえで、誰がいつ投�
 
 **本番URL: https://poll-dev.poll-timing-research.workers.dev**
 
+## 目次
+
+- [このフォルダの中身](#このフォルダの中身)
+- [アーキテクチャ](#アーキテクチャ)
+  - [全体像](#全体像)
+  - [認証: LINEログイン（OAuth 2.1）](#認証-lineログインoauth-21)
+  - [データ設計: 集計テーブルを持たない](#データ設計-集計テーブルを持たない)
+  - [投票のライフサイクル](#投票のライフサイクル)
+  - [途中経過の見せ方 / 匿名投票](#途中経過の見せ方-匿名投票)
+  - [リンクプレビュー（OGP）](#リンクプレビューogp)
+  - [デプロイ構成](#デプロイ構成)
+- [セットアップ](#セットアップ)
+  - [前提](#前提)
+  - [環境ファイルを作る](#環境ファイルを作る)
+  - [自動セットアップ](#自動セットアップsetupsh)
+  - [手動セットアップ](#手動セットアップ)
+  - [ローカルで動かす](#ローカルで動かす)
+  - [LINE Developers側の設定](#line-developers側の設定)
+  - [動作確認](#動作確認)
+- [LINEチャネルの公開設定](#lineチャネルの公開設定)
+- [済んでいること](#済んでいること)
+- [まだやっていないこと](#まだやっていないこと)
+
 ## このフォルダの中身
 
 ```
 app/      本体。Cloudflare Workers + D1。ここで作業する
-  README.md         ← IaC(Terraform/wrangler)の手順はこちら
+  README.md         ← IaC(Terraform/wrangler)の考え方・日々の操作
   infra/             Terraform（D1データベースの宣言）
   worker/index.js    API本体 + OGPカードの差し替え
   migrations/        データベースのスキーマ
@@ -19,10 +42,12 @@ app/      本体。Cloudflare Workers + D1。ここで作業する
     index.html         実際に使う画面（LINE風UI。投票APIに接続済み）
     ogp.png             LINEに貼ったときのリンクカード画像
   Makefile           操作はすべてここから
+  setup.sh           初回セットアップを1本で終わらせるスクリプト
 
 docs/     ブラウザで開ける資料（ダブルクリック）
   設計書.html            仕様と、決めるべきことの一覧
-  モック.html            LINE投票を再現した画面 ＋ 取れるデータ（インメモリの試作）
+  モック.html            LINE投票を再現した画面 ＋ 取れるデータ。ログイン不要のインメモリ試作。
+                          実データには繋がっていないので、本番を汚さずにUIだけ見せたい時用
   TODO.html              やることリスト
   自動ログイン診断.html   検証に使ったページ（済み）
 ```
@@ -104,11 +129,88 @@ vote_cast / vote_changed / vote_withdrawn / page_hidden / poll_closed
 
 ### デプロイ構成
 
-D1データベースの宣言だけTerraformで管理し、Workerのコード・シークレット・マイグレーション・配備はwranglerが担当（チャネルシークレットが`terraform.tfstate`に平文で残るのを避けるため）。詳しい役割分担と操作手順は `app/README.md` を参照。
+D1データベースの宣言だけTerraformで管理し、Workerのコード・シークレット・マイグレーション・配備はwranglerが担当（チャネルシークレットが`terraform.tfstate`に平文で残るのを避けるため）。考え方の詳しい説明は `app/README.md` を参照。
 
-## いま動かすために必要なこと
+## セットアップ
 
-本体はすでに動いています。残っているのはLINE側の設定です。
+すでに本番は動いていますが、作り直したい・別環境（prod等）を立てたい場合の手順です。
+
+### 前提
+
+- Node.js（`app/package.json` は wrangler ^4 を要求）
+- Terraform（D1データベースの宣言に使う）
+
+`./setup.sh` を使うなら、Homebrewが入っていればNode.js・Terraformの導入もスクリプトが行います。
+
+### 環境ファイルを作る
+
+秘密情報を持つファイルは3つあり、すべて`.gitignore`済み（Gitには載らない）です。それぞれ`.example`ファイルをコピーして中身を埋めます。
+
+```bash
+cd app
+cp .env.example .env
+cp .dev.vars.example .dev.vars
+cp infra/terraform.tfvars.example infra/terraform.tfvars
+```
+
+| ファイル | 使われる場面 | 中身 | 値の取得場所 |
+|---|---|---|---|
+| `.env` | `make`コマンド全般・`setup.sh` | `CLOUDFLARE_API_TOKEN`, `LINE_CHANNEL_ID`, `DB_NAME` | Cloudflareダッシュボード → 右上アイコン→プロフィール→APIトークン（権限は**Workers スクリプト:編集**と**D1:編集**の2つだけ）／LINE Developers→LINEログインチャネル→チャネル基本設定 |
+| `.dev.vars` | `wrangler dev`（ローカル実行時のみ） | `LINE_CHANNEL_SECRET`, `SESSION_SECRET` | LINE Developersのチャネル基本設定の下の方／`openssl rand -hex 32`で自分で生成 |
+| `infra/terraform.tfvars` | Terraform | `account_id`, `env` | Cloudflareダッシュボード（Workers & Pagesページ右側、または`dash.cloudflare.com/<ここ>`の32桁） |
+
+本番のチャネルシークレット・セッション鍵は`.dev.vars`ではなく`wrangler secret put`（後述の`make secrets`）で登録します。`terraform.tfstate`に平文で残るのを避けるためで、Terraformでは扱いません。
+
+### 自動セットアップ（`setup.sh`）
+
+```bash
+cd app
+./setup.sh
+```
+
+上の3ファイルの中身を対話的に聞かれるので、その場で貼り付けても構いません（すでに埋めてあれば聞かれません）。Homebrew・Node.js・Terraformの導入から、D1の作成・スキーマ適用・配備まで一括で行います。**何度実行しても壊れません**。終わると配備先URLが表示されます。
+
+### 手動セットアップ
+
+中で何が起きているかを知りたい場合、または`setup.sh`を使わない場合の手順です。
+
+```bash
+cd app
+npm install
+make bootstrap    # terraform init → D1作成 → wrangler.jsonc生成
+make secrets      # LINEチャネルシークレット・セッション鍵をCloudflareに登録
+make migrate      # 本番のD1にスキーマを適用
+make deploy       # 配備
+```
+
+`make bootstrap`の途中で`terraform apply`が「何を作るか」を表示して確認を求めます。内容を読んで`yes`と入力してください。
+
+### ローカルで動かす
+
+`.dev.vars`にシークレットを置いてある前提です。
+
+```bash
+cd app
+make migrate-local   # ローカルのD1にスキーマを当てる
+make dev             # http://localhost:8787
+```
+
+### LINE Developers側の設定
+
+配備先URL（`https://<worker名>.<あなた>.workers.dev`）が決まったら、LINE Developersの対象チャネルのコールバックURLに次を追記します（完全一致でないと弾かれます。改行して追記、既存のURLは消さない）。
+
+```
+https://<配備先>/auth/callback
+```
+
+### 動作確認
+
+配備先URLを開くか、`/api/health`を見ます。
+
+- `"d1": "ok"` とテーブル名が並んでいればデータベースまで繋がっている
+- 実機（オープンチャットのアプリ内ブラウザ）で開いて、投票の作成→投稿→投票が一通りできれば完了
+
+## LINEチャネルの公開設定
 
 現在LINEログインのチャネルは「開発中」で、管理者・テスターとして登録したLINEアカウントしかログインできません。オープンチャットの100人全員が入れるようにするには、LINE Developersコンソールでチャネルを「公開」に切り替える必要があります（**一度公開にすると開発中には戻せない**ので、検証したい相手が揃ってから）。少人数でもう少しテストしたいだけなら、そのアカウントをテスターとして追加すればチャネルは開発中のままで試せます。
 
