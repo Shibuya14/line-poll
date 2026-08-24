@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{ margin:0; padding:0; width:1200px; height:1200px; }
+  .canvas{
+    width:1200px; height:1200px;
+    background:
+      radial-gradient(120% 120% at 50% 28%, #A9C7D6 0%, #8FB0C2 46%, #6F94A8 100%);
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .canvas::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:0; height:38%;
+    background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(35,58,71,0.16) 100%);
+  }
+</style>
+</head>
+<body>
+  <div class="canvas">
+    <svg width="620" height="620" viewBox="0 0 400 400">
+      <defs>
+        <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#1F3A47" flood-opacity="0.28"/>
+        </filter>
+        <linearGradient id="topFace" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#FFFFFF"/>
+          <stop offset="100%" stop-color="#E7E9EA"/>
+        </linearGradient>
+        <linearGradient id="frontFace" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#FFFFFF"/>
+          <stop offset="100%" stop-color="#F6F7F8"/>
+        </linearGradient>
+      </defs>
+
+      <g transform="translate(0,-58)">
+        <g filter="url(#soft)">
+          <!-- top/lid face (perspective trapezoid) -->
+          <path d="M 92 148 L 308 148 L 340 182 L 60 182 Z" fill="url(#topFace)" stroke="#D8DBDD" stroke-width="2" stroke-linejoin="round"/>
+          <!-- slot -->
+          <rect x="168" y="156" width="64" height="14" rx="7" fill="#8A9096"/>
+          <!-- front face -->
+          <rect x="60" y="182" width="280" height="188" rx="22" fill="url(#frontFace)" stroke="#D8DBDD" stroke-width="2"/>
+        </g>
+
+        <!-- checkmark -->
+        <path d="M 138 282 L 182 326 L 268 232" fill="none" stroke="#E8623F" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+  </div>
+</body>
+</html>
