@@ -1,0 +1,5 @@
+# このファイルを terraform.tfvars にコピーして、自分の値を入れてください。
+# terraform.tfvars は .gitignore 済みです。
+
+account_id = "ここにCloudflareのアカウントIDを貼る"
+env        = "dev"

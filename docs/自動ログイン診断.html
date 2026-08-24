@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LINEログイン 自動ログイン診断</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    margin: 0; padding: 16px; line-height: 1.7; font-size: 16px;
+    background: #f7f8fa; color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181d; color: #e8e8e8; }
+    .card { background: #1f2229 !important; border-color: #333 !important; }
+    .kv td { border-color: #333 !important; }
+    textarea { background: #12141a !important; color: #ccc !important; border-color: #333 !important; }
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { font-size: 13px; opacity: .65; margin-bottom: 16px; }
+  .card {
+    background: #fff; border: 1px solid #e2e4e8; border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 10px; letter-spacing: .02em; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 13px; font-weight: 700; margin-right: 6px;
+  }
+  .ok   { background: #d8f5dd; color: #12651f; }
+  .ng   { background: #ffdcdc; color: #9b1c1c; }
+  .warn { background: #fff0cc; color: #8a5b00; }
+  .info { background: #e2e8f5; color: #2b4a80; }
+  .kv { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .kv td { padding: 7px 0; border-bottom: 1px solid #eceef1; vertical-align: top; }
+  .kv td:first-child { width: 42%; opacity: .7; padding-right: 10px; }
+  .kv tr:last-child td { border-bottom: none; }
+  button {
+    font-size: 17px; font-weight: 600; padding: 15px 20px; width: 100%;
+    border: none; border-radius: 10px; background: #06C755; color: #fff;
+    margin-top: 6px; cursor: pointer; font-family: inherit;
+  }
+  button.sec { background: #6b7280; font-size: 15px; padding: 12px; }
+  button.half { width: 48%; display: inline-block; }
+  .row { display: flex; gap: 4%; }
+  .verdict { font-size: 17px; font-weight: 700; margin: 4px 0 10px; }
+  textarea {
+    width: 100%; box-sizing: border-box; height: 190px; font-size: 11px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; border: 1px solid #d5d8dd;
+    border-radius: 8px; padding: 8px; background: #fbfbfc; color: #333;
+  }
+  .note { font-size: 13px; opacity: .75; margin-top: 8px; }
+  code { font-size: 12px; background: rgba(128,128,128,.15); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<h1>LINEログイン 自動ログイン診断</h1>
+<div class="sub">オープンチャットのアプリ内ブラウザで開いてください</div>
+<div id="app"></div>
+
+<script>
+"use strict";
+
+/* ================================================================
+   設定：この1行だけ書き換える
+   LINE Developers → LINEログインチャネル → チャネル基本設定 → チャネルID
+   ================================================================ */
+const CHANNEL_ID = "ここにチャネルIDを貼る";
+/* ================================================================ */
+
+const AUTH_URL    = "https://access.line.me/oauth2/v2.1/authorize";
+const SCOPE       = "openid profile";
+const REDIRECT_URI = location.origin + location.pathname;
+const K = "ocdiag_";
+
+/* ---------- ストレージ抽象化（3系統すべてを試す） ---------- */
+function lsGet(k){ try { return localStorage.getItem(K+k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(K+k,v); return true; } catch(e){ return false; } }
+function ssGet(k){ try { return sessionStorage.getItem(K+k); } catch(e){ return null; } }
+function ssSet(k,v){ try { sessionStorage.setItem(K+k,v); return true; } catch(e){ return false; } }
+function ckGet(k){
+  try {
+    var m = document.cookie.match(new RegExp("(^|; )" + K + k + "=([^;]*)"));
+    return m ? decodeURIComponent(m[2]) : null;
+  } catch(e){ return null; }
+}
+function ckSet(k,v){
+  try {
+    document.cookie = K + k + "=" + encodeURIComponent(v) + ";max-age=31536000;path=/;SameSite=Lax";
+    return ckGet(k) === v;
+  } catch(e){ return false; }
+}
+function setAll(k,v){ return { ls: lsSet(k,v), ss: ssSet(k,v), ck: ckSet(k,v) }; }
+function getAny(k){
+  var a = lsGet(k), b = ssGet(k), c = ckGet(k);
+  return { value: (a !== null ? a : (b !== null ? b : c)), ls: a, ss: b, ck: c };
+}
+function rnd(n){
+  var s = "", cs = "abcdefghijklmnopqrstuvwxyz0123456789";
+  for (var i=0;i<n;i++) s += cs.charAt(Math.floor(Math.random()*cs.length));
+  return s;
+}
+function qs(){
+  var o = {}, q = location.search.replace(/^\?/,"");
+  if (!q) return o;
+  q.split("&").forEach(function(p){
+    var i = p.indexOf("=");
+    if (i < 0) { o[decodeURIComponent(p)] = ""; return; }
+    o[decodeURIComponent(p.slice(0,i))] = decodeURIComponent(p.slice(i+1).replace(/\+/g," "));
+  });
+  return o;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+/* ---------- 端末・ブラウザ判定 ---------- */
+var UA = navigator.userAgent;
+var isLineApp  = /Line\//i.test(UA);
+var isLiff     = /\bLIFF\b/i.test(UA);
+var lineVer    = (UA.match(/Line\/([\d.]+)/i) || [])[1] || "-";
+
+/* ---------- 訪問回数・永続ID ---------- */
+var idRec = getAny("id");
+var isFirstVisit = !idRec.value;
+var persistId = idRec.value || rnd(10);
+var storeResult = setAll("id", persistId);
+
+var visitRec = getAny("visits");
+var visits = (parseInt(visitRec.value, 10) || 0) + 1;
+setAll("visits", String(visits));
+
+var firstSeen = getAny("first").value;
+if (!firstSeen) { firstSeen = new Date().toISOString(); setAll("first", firstSeen); }
+
+/* ---------- ログ ---------- */
+var LOG = [];
+function log(k,v){ LOG.push(k + "\t" + v); }
+
+/* ---------- 画面描画 ---------- */
+var p = qs();
+var app = document.getElementById("app");
+var html = "";
+
+/* --- ブロック1：環境情報 --- */
+var envBadge = isLineApp
+  ? '<span class="badge ok">LINE内ブラウザ</span>'
+  : '<span class="badge ng">LINE内ブラウザではない</span>';
+if (isLiff) envBadge += '<span class="badge info">LIFF</span>';
+
+html += '<div class="card"><h2>1. 実行環境</h2>' + envBadge +
+  '<table class="kv">' +
+  row("LINEバージョン", lineVer) +
+  row("プラットフォーム", /iPhone|iPad|iPod/i.test(UA) ? "iOS" : (/Android/i.test(UA) ? "Android" : "その他")) +
+  row("UserAgent", '<code>' + esc(UA) + '</code>') +
+  row("redirect_uri", '<code>' + esc(REDIRECT_URI) + '</code>') +
+  '</table>' +
+  (isLineApp ? '' : '<div class="note">⚠ LINEのトーク画面からリンクをタップして開いてください。外部ブラウザで開くと今回の検証になりません。</div>') +
+  '</div>';
+
+log("UA", UA);
+log("LINE内ブラウザ", isLineApp ? "YES" : "NO");
+log("redirect_uri", REDIRECT_URI);
+
+/* --- ブロック2：ストレージ永続性 --- */
+var sb = "";
+sb += badge("localStorage",   storeResult.ls, isFirstVisit ? null : (idRec.ls !== null));
+sb += badge("sessionStorage", storeResult.ss, isFirstVisit ? null : (idRec.ss !== null));
+sb += badge("Cookie",         storeResult.ck, isFirstVisit ? null : (idRec.ck !== null));
+
+html += '<div class="card"><h2>2. ストレージ永続性</h2>' + sb +
+  '<table class="kv">' +
+  row("この端末のID", '<code>' + esc(persistId) + '</code>') +
+  row("通算アクセス回数", visits + " 回目") +
+  row("初回アクセス", esc(firstSeen)) +
+  '</table>' +
+  '<div class="note">' +
+  (isFirstVisit
+    ? '初回アクセスです。<b>一度LINEを完全に終了してから、もう一度このリンクを開いてください。</b>IDと回数が保持されていれば永続性ありです。'
+    : 'IDが前回と同じで回数が増えていれば、ストレージは生き残っています。') +
+  '</div></div>';
+
+log("永続ID", persistId);
+log("アクセス回数", visits);
+log("ls生存", String(idRec.ls !== null));
+log("ss生存", String(idRec.ss !== null));
+log("ck生存", String(idRec.ck !== null));
+
+/* --- ブロック3：自動ログイン --- */
+var authCount = parseInt(getAny("authn").value, 10) || 0;
+
+html += '<div class="card"><h2>3. 自動ログイン判定</h2>';
+
+if (p.code) {
+  /* --- 認可成功で戻ってきた --- */
+  var t0 = parseInt(getAny("t0").value, 10) || 0;
+  var elapsed = t0 ? (Date.now() - t0) : -1;
+  var savedState = getAny("state").value;
+  var stateOk = savedState && p.state && savedState === p.state;
+
+  html += '<div class="verdict"><span class="badge ok">認可コード取得成功</span></div>';
+  html += '<table class="kv">' +
+    row("所要時間", elapsed >= 0 ? (elapsed/1000).toFixed(1) + " 秒" : "計測不能") +
+    row("state検証", stateOk ? "一致" : (savedState ? "不一致" : "保存されていなかった")) +
+    row("認可コード", '<code>' + esc(p.code.slice(0,14)) + '…</code>') +
+    row("今回の認可試行", (authCount) + " 回目") +
+    '</table>';
+
+  html += '<div class="note"><b>目視で確認したことを記録してください。</b>今回、ログイン画面や同意画面は出ましたか？</div>';
+  html += '<div class="row">' +
+    '<button class="half sec" onclick="mark(\'画面なし・完全自動\')">出なかった</button>' +
+    '<button class="half sec" onclick="mark(\'画面あり\')">出た</button>' +
+    '</div>';
+  html += '<div id="markres" class="note"></div>';
+
+  log("認可結果", "SUCCESS");
+  log("所要ms", elapsed);
+  log("state一致", String(!!stateOk));
+  log("認可試行回数", authCount);
+
+} else if (p.error) {
+  /* --- 認可失敗 --- */
+  html += '<div class="verdict"><span class="badge ng">認可失敗</span></div>';
+  html += '<table class="kv">' +
+    row("error", esc(p.error)) +
+    row("説明", esc(p.error_description || "-")) +
+    '</table>';
+  html += '<div class="note">' +
+    (p.error === "invalid_request"
+      ? 'コールバックURLの登録内容と <code>redirect_uri</code> が完全一致していない可能性が高いです。上の redirect_uri をそのままLINE Developersに登録してください。'
+      : 'ユーザーがキャンセルしたか、チャネル設定に問題があります。') +
+    '</div>';
+  html += '<button onclick="startAuth()">もう一度試す</button>';
+
+  log("認可結果", "ERROR " + p.error + " / " + (p.error_description||""));
+
+} else {
+  /* --- 初期状態 --- */
+  if (CHANNEL_ID.indexOf("ここに") === 0) {
+    html += '<div class="verdict"><span class="badge ng">未設定</span></div>' +
+      '<div class="note">HTMLの <code>CHANNEL_ID</code> をあなたのチャネルIDに書き換えてください。</div>';
+  } else {
+    html += '<div class="note">' +
+      (authCount === 0
+        ? '<b>1回目は同意画面が出るのが正常です。</b>これはチャネルへの権限付与で、1人につき1度だけ発生します。<b>本番の判定は2回目以降</b>で、そこで何も出なければ自動ログイン成功です。'
+        : '2回目以降のテストです。ここで画面が一切出ずに戻ってくれば、自動ログインが機能しています。') +
+      '</div>';
+    html += '<button onclick="startAuth()">' + (authCount === 0 ? "テスト開始" : "もう一度テスト") + '</button>';
+  }
+}
+html += '</div>';
+
+/* --- ブロック4：ログ --- */
+html += '<div class="card"><h2>4. ログ（コピーして共有）</h2>' +
+  '<textarea id="logbox" readonly></textarea>' +
+  '<button class="sec" onclick="copyLog()">ログをコピー</button>' +
+  '<button class="sec" onclick="resetAll()">記録を消してやり直す</button>' +
+  '</div>';
+
+app.innerHTML = html;
+document.getElementById("logbox").value = LOG.join("\n");
+
+function row(k,v){ return "<tr><td>" + k + "</td><td>" + v + "</td></tr>"; }
+function badge(name, wrote, survived){
+  if (survived === null) return '<span class="badge ' + (wrote ? "info" : "ng") + '">' + name + (wrote ? " 書込OK" : " 書込不可") + '</span>';
+  return '<span class="badge ' + (survived ? "ok" : "ng") + '">' + name + (survived ? " 生存" : " 消失") + '</span>';
+}
+
+/* ---------- アクション ---------- */
+function startAuth(){
+  var state = rnd(16);
+  var nonce = rnd(16);
+  setAll("state", state);
+  setAll("t0", String(Date.now()));
+  setAll("authn", String(authCount + 1));
+
+  var u = AUTH_URL +
+    "?response_type=code" +
+    "&client_id=" + encodeURIComponent(CHANNEL_ID) +
+    "&redirect_uri=" + encodeURIComponent(REDIRECT_URI) +
+    "&state=" + encodeURIComponent(state) +
+    "&scope=" + encodeURIComponent(SCOPE) +
+    "&nonce=" + encodeURIComponent(nonce);
+  /* disable_auto_login は指定しない（既定 false = 自動ログイン有効） */
+  location.href = u;
+}
+function mark(t){
+  LOG.push("目視確認\t" + t);
+  document.getElementById("logbox").value = LOG.join("\n");
+  document.getElementById("markres").innerHTML = "記録しました：<b>" + esc(t) + "</b>";
+}
+function copyLog(){
+  var b = document.getElementById("logbox");
+  b.removeAttribute("readonly"); b.select(); b.setSelectionRange(0, 99999);
+  try { document.execCommand("copy"); alert("コピーしました"); } catch(e){ alert("長押しで選択してコピーしてください"); }
+  b.setAttribute("readonly","readonly");
+}
+function resetAll(){
+  ["id","visits","first","state","t0","authn"].forEach(function(k){
+    try { localStorage.removeItem(K+k); } catch(e){}
+    try { sessionStorage.removeItem(K+k); } catch(e){}
+    try { document.cookie = K+k+"=;max-age=0;path=/"; } catch(e){}
+  });
+  location.href = REDIRECT_URI;
+}
+</script>
+</body>
+</html>

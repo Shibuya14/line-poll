@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body>
+<title>投票タイミング計測アプリ設計書</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --bg:#F0F3F0; --surface:#FFFFFF; --surface-2:#E7ECE8;
+    --ink:#14181A; --ink-2:#39433F; --muted:#67736F;
+    --line:#D7DED8; --line-2:#BDC7C0;
+    --accent:#12594A; --accent-ink:#0C3C33; --accent-soft:#DBE9E3;
+    --warn:#87590F; --warn-soft:#F5EAD3;
+    --crit:#94251E; --crit-soft:#F6E1DF;
+    --ok:#1D6A51; --ok-soft:#DCECE3;
+    --shadow:0 1px 2px rgba(20,24,26,.05), 0 8px 24px -16px rgba(20,24,26,.28);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#111513; --surface:#191F1C; --surface-2:#212926;
+      --ink:#E7EBE8; --ink-2:#C3CCC8; --muted:#93A09B;
+      --line:#2B3430; --line-2:#3C4742;
+      --accent:#5CC3A4; --accent-ink:#8FD9C1; --accent-soft:#1B2F29;
+      --warn:#D6A445; --warn-soft:#302716;
+      --crit:#E28479; --crit-soft:#33201E;
+      --ok:#5CC3A4; --ok-soft:#1B2F29;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#111513; --surface:#191F1C; --surface-2:#212926;
+    --ink:#E7EBE8; --ink-2:#C3CCC8; --muted:#93A09B;
+    --line:#2B3430; --line-2:#3C4742;
+    --accent:#5CC3A4; --accent-ink:#8FD9C1; --accent-soft:#1B2F29;
+    --warn:#D6A445; --warn-soft:#302716;
+    --crit:#E28479; --crit-soft:#33201E;
+    --ok:#5CC3A4; --ok-soft:#1B2F29;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:16px; line-height:1.85; letter-spacing:.01em;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:1180px; margin:0 auto; padding:0 24px 120px; }
+
+  /* ---------- masthead ---------- */
+  .mast{ padding:64px 0 34px; border-bottom:2px solid var(--ink); }
+  .eyebrow{
+    font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--accent); font-weight:700; margin:0 0 14px;
+  }
+  h1{
+    font-family:"Shippori Mincho B1","Hiragino Mincho ProN",serif;
+    font-weight:700; font-size:clamp(30px,5vw,46px); line-height:1.3;
+    margin:0 0 16px; text-wrap:balance; letter-spacing:.01em;
+  }
+  .lede{ font-size:17px; color:var(--ink-2); max-width:62ch; margin:0 0 26px; }
+  .mast-meta{
+    display:flex; flex-wrap:wrap; gap:8px 28px;
+    font-size:13px; color:var(--muted);
+    font-family:"JetBrains Mono",ui-monospace,monospace;
+  }
+  .mast-meta b{ color:var(--ink-2); font-weight:500; }
+
+  /* ---------- layout ---------- */
+  .cols{ display:grid; grid-template-columns:1fr; gap:0; }
+  @media (min-width:1000px){
+    .cols{ grid-template-columns:214px minmax(0,1fr); gap:56px; align-items:start; }
+    nav.toc{ position:sticky; top:24px; padding-top:44px; }
+  }
+  nav.toc{ padding:28px 0 0; }
+  nav.toc p{
+    font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 12px; font-weight:700;
+  }
+  nav.toc ol{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+  nav.toc a{
+    display:flex; gap:10px; text-decoration:none; color:var(--ink-2);
+    font-size:13.5px; line-height:1.5; padding:5px 8px; border-radius:5px;
+    border-left:2px solid transparent;
+  }
+  nav.toc a:hover{ background:var(--surface-2); color:var(--ink); border-left-color:var(--accent); }
+  nav.toc a:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  nav.toc .n{ color:var(--muted); font-family:"JetBrains Mono",monospace; font-size:12px; }
+
+  main{ display:flex; flex-direction:column; gap:60px; padding-top:44px; min-width:0; }
+  section{ scroll-margin-top:20px; display:flex; flex-direction:column; gap:18px; }
+  h2{
+    font-family:"Shippori Mincho B1","Hiragino Mincho ProN",serif;
+    font-size:25px; font-weight:600; line-height:1.4; margin:0;
+    padding-bottom:12px; border-bottom:1px solid var(--line-2);
+    display:flex; align-items:baseline; gap:14px; text-wrap:balance;
+  }
+  h2 .n{
+    font-family:"JetBrains Mono",monospace; font-size:14px; font-weight:500;
+    color:var(--accent); flex:none;
+  }
+  h3{
+    font-size:16.5px; font-weight:700; margin:10px 0 0; line-height:1.5;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  h3 .n{ font-family:"JetBrains Mono",monospace; font-size:12.5px; color:var(--muted); font-weight:500; }
+  p{ margin:0; max-width:66ch; }
+  section > p, section > ul, section > ol{ color:var(--ink-2); }
+  ul,ol{ margin:0; padding-left:1.35em; display:flex; flex-direction:column; gap:7px; max-width:64ch; }
+  li::marker{ color:var(--muted); }
+  strong{ font-weight:700; color:var(--ink); }
+  code{
+    font-family:"JetBrains Mono",ui-monospace,monospace; font-size:.86em;
+    background:var(--surface-2); padding:2px 6px; border-radius:4px;
+    border:1px solid var(--line); word-break:break-all;
+  }
+  a{ color:var(--accent); }
+
+  /* ---------- chips ---------- */
+  .chip{
+    display:inline-flex; align-items:center; gap:5px; flex:none;
+    font-size:11.5px; font-weight:700; letter-spacing:.06em;
+    padding:2px 9px; border-radius:3px; border:1px solid transparent;
+    font-family:"Zen Kaku Gothic New",sans-serif; line-height:1.7;
+  }
+  .c-ok{ background:var(--ok-soft); color:var(--ok); border-color:var(--ok); }
+  .c-open{ background:var(--warn-soft); color:var(--warn); border-color:var(--warn); }
+  .c-crit{ background:var(--crit-soft); color:var(--crit); border-color:var(--crit); }
+  .c-flat{ background:var(--surface-2); color:var(--muted); border-color:var(--line-2); }
+
+  /* ---------- cards / callouts ---------- */
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:8px;
+    padding:20px 22px; display:flex; flex-direction:column; gap:12px;
+    box-shadow:var(--shadow);
+  }
+  .callout{
+    border-left:3px solid var(--line-2); background:var(--surface);
+    border-radius:0 8px 8px 0; padding:18px 22px;
+    display:flex; flex-direction:column; gap:11px;
+  }
+  .callout.crit{ border-left-color:var(--crit); background:var(--crit-soft); }
+  .callout.warn{ border-left-color:var(--warn); background:var(--warn-soft); }
+  .callout.ok{ border-left-color:var(--ok); background:var(--ok-soft); }
+  .callout h4{
+    margin:0; font-size:15px; font-weight:700; line-height:1.5;
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  }
+  .callout p, .callout ul{ margin:0; font-size:14.5px; color:var(--ink-2); max-width:62ch; }
+  .callout.crit p, .callout.crit ul, .callout.crit h4{ color:var(--crit); }
+  .callout.warn p, .callout.warn ul, .callout.warn h4{ color:var(--warn); }
+  .callout.ok p, .callout.ok ul, .callout.ok h4{ color:var(--ok); }
+  .rec{
+    margin-top:2px; padding-top:11px; border-top:1px dashed currentColor;
+    font-weight:700; font-size:14.5px;
+  }
+
+  /* ---------- tables ---------- */
+  .tw{ overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+  table{ border-collapse:collapse; width:100%; font-size:14px; min-width:520px; }
+  th,td{ text-align:left; padding:11px 15px; border-bottom:1px solid var(--line); vertical-align:top; line-height:1.65; }
+  th{
+    background:var(--surface-2); font-size:11.5px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted); font-weight:700; white-space:nowrap;
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  td.mono, .mono{ font-family:"JetBrains Mono",monospace; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  td.nowrap{ white-space:nowrap; }
+
+  /* ---------- code block ---------- */
+  pre{
+    margin:0; background:var(--surface); color:var(--ink-2);
+    border:1px solid var(--line); border-radius:8px; padding:16px 18px;
+    overflow-x:auto; font-family:"JetBrains Mono",monospace;
+    font-size:12.5px; line-height:1.85; font-variant-numeric:tabular-nums;
+  }
+  pre b{ color:var(--accent); font-weight:500; }
+  pre i{ color:var(--muted); font-style:normal; }
+
+  /* ---------- screen flow ---------- */
+  .flow{ display:flex; flex-direction:column; gap:0; }
+  .fstep{ display:grid; grid-template-columns:26px minmax(0,1fr); gap:16px; }
+  .frail{ display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .fdot{
+    width:26px; height:26px; border-radius:50%; flex:none;
+    background:var(--accent); color:var(--surface);
+    display:grid; place-items:center; font-size:12px; font-weight:700;
+    font-family:"JetBrains Mono",monospace;
+  }
+  .fdot.alt{ background:var(--surface); color:var(--accent); border:1.5px solid var(--accent); }
+  .fline{ width:1.5px; flex:1; background:var(--line-2); min-height:14px; }
+  .fbody{ padding-bottom:22px; display:flex; flex-direction:column; gap:5px; }
+  .fbody h5{ margin:0; font-size:15px; font-weight:700; line-height:1.6; }
+  .fbody p{ margin:0; font-size:14px; color:var(--muted); }
+  .fstep:last-child .fbody{ padding-bottom:0; }
+
+  /* ---------- screen spec grid ---------- */
+  .screens{ display:grid; grid-template-columns:1fr; gap:14px; }
+  @media (min-width:660px){ .screens{ grid-template-columns:1fr 1fr; } }
+  .screen{
+    background:var(--surface); border:1px solid var(--line); border-radius:8px;
+    padding:16px 18px; display:flex; flex-direction:column; gap:9px;
+  }
+  .screen .tag{
+    font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--accent);
+    letter-spacing:.06em; font-weight:500;
+  }
+  .screen h4{ margin:0; font-size:15px; font-weight:700; line-height:1.5; }
+  .screen p{ margin:0; font-size:13.5px; color:var(--muted); }
+
+  hr{ border:none; border-top:1px solid var(--line); margin:4px 0; }
+  .foot{
+    margin-top:16px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:13px; color:var(--muted); max-width:66ch;
+  }
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">研究用ツール設計書 &middot; ドラフト v0.2</p>
+    <h1>投票タイミング計測アプリ</h1>
+    <p class="lede">LINEの投票機能に見た目と操作を揃えたうえで、誰がいつ投票したかを記録する。既存のオープンチャット（約100名）で、参加者に新しい操作を覚えさせずに意思決定タイミングのデータを取ることを目的とする。</p>
+    <div class="mast-meta">
+      <span>作成 <b>2026-08-23</b></span>
+      <span>対象 <b>オープンチャット / 約100名</b></span>
+      <span>構成 <b>Cloudflare Workers + D1</b></span>
+      <span>状態 <b>技術検証済・モック実装済</b></span>
+    </div>
+    <p style="margin-top:22px"><a href="https://claude.ai/code/artifact/b9a13d78-a811-412c-b201-4a3f5d0712cd" style="font-weight:700">→ 動くモックを開く</a><span style="color:var(--muted);font-size:14px"> ／ 画面の挙動と、そこから取れるイベントログを実際に触って確認できます</span></p>
+  </header>
+
+  <div class="cols">
+
+    <nav class="toc">
+      <p>目次</p>
+      <ol>
+        <li><a href="#s1"><span class="n">1</span><span>背景と方針</span></a></li>
+        <li><a href="#s2"><span class="n">2</span><span>検証済みの事実</span></a></li>
+        <li><a href="#s3"><span class="n">3</span><span>参加者の動線</span></a></li>
+        <li><a href="#s4"><span class="n">4</span><span>画面仕様</span></a></li>
+        <li><a href="#s5"><span class="n">5</span><span>LINE準拠できない点</span></a></li>
+        <li><a href="#s6"><span class="n">6</span><span>データ設計</span></a></li>
+        <li><a href="#s7"><span class="n">7</span><span>認証と権限</span></a></li>
+        <li><a href="#s8"><span class="n">8</span><span>システム構成</span></a></li>
+        <li><a href="#s9"><span class="n">9</span><span>未決事項</span></a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- 1 -->
+      <section id="s1">
+        <h2><span class="n">01</span>背景と方針</h2>
+        <p>LINEの投票機能は、各投票者の投票日時を取得できない。一方で、参加者に馴染みのない新しいアプリを配ると、操作の学習コストと脱落が発生する。特に今回の対象は高齢の参加者が多く、アプリの切り替えや文字入力が大きな障壁になる。</p>
+        <p>そこで、<strong>見た目と操作をLINEの投票機能に揃えたうえで、タイムスタンプを記録できる別アプリ</strong>を用意する。参加者の体験は可能な限り現状のまま、研究に必要なデータだけを追加で取得する。</p>
+        <div class="card">
+          <h3 style="margin-top:0">設計の優先順位</h3>
+          <ol>
+            <li><strong>参加者の操作を増やさない</strong> — ログイン、文字入力、アプリ切り替えをゼロに近づける。ここを削るほど脱落が減る。</li>
+            <li><strong>時刻の精度を落とさない</strong> — 測定対象がタイミングそのものなので、サーバー応答の遅延はそのまま測定誤差になる。</li>
+            <li><strong>見た目をLINEに寄せる</strong> — ただし著作物の複製はしない（<a href="#s5">5章</a>）。</li>
+          </ol>
+        </div>
+        <p>主要な観測変数は<strong>意思決定のタイミング</strong>である。誰がいつ投票したかに加え、開いてから決めるまでの時間、開いたのに投票しなかった離脱を記録する。いずれもLINEの投票機能では取得できない。</p>
+      </section>
+
+      <!-- 2 -->
+      <section id="s2">
+        <h2><span class="n">02</span>検証済みの事実</h2>
+        <p>最大の技術的リスクは「オープンチャットではLINEアカウントによる個人識別ができないのではないか」という点だった。実機検証の結果、<strong>回避可能であることが確認できた</strong>。</p>
+        <div class="callout ok">
+          <h4><span class="chip c-ok">確定</span>オープンチャットでもLINEログインは通る</h4>
+          <p>LIFF（LINE Front-end Framework）はオープンチャットで公式サポートされておらず、プロフィール取得が動かない。しかし<strong>LIFFを使わず、汎用のLINEログイン（OAuth 2.1）を直接実行すれば識別できる</strong>。両者は別の仕組みであり、LIFFの制限はOAuthフローには及ばない。</p>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>検証項目</th><th>結果</th><th>条件</th></tr></thead>
+            <tbody>
+              <tr><td>自動ログイン（1回目）</td><td class="mono">成功 / 1434ms / 無操作</td><td class="nowrap">iOS 18.7 / LINE 26.12.1</td></tr>
+              <tr><td>自動ログイン（2回目・アプリ完全終了後）</td><td class="mono">成功 / 2068ms / 無操作</td><td class="nowrap">同上</td></tr>
+              <tr><td>実行環境の判定</td><td class="mono">LINE内ブラウザ</td><td>オープンチャットから起動</td></tr>
+              <tr><td>localStorage / sessionStorage / Cookie</td><td class="mono">3系統とも生存</td><td>アプリ完全終了を跨いで保持</td></tr>
+              <tr><td>state検証（CSRF対策）</td><td class="mono">一致</td><td>&mdash;</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>参加者はリンクをタップするだけで本人が特定される。</strong>ログイン画面もパスワード入力も外部ブラウザへの遷移も発生しない。設計の前提条件はこれで満たされた。</p>
+        <div class="callout warn">
+          <h4><span class="chip c-open">要追加検証</span>まだ1台・1名の結果である</h4>
+          <p>比較的新しいiPhone 1台での成功にすぎない。古いAndroid、長期間LINEに再ログインしていない端末、プライベートブラウジング設定では自動ログインが失敗しうる。</p>
+          <p class="rec">実装と並行して、協力者5〜10名（Android混み）で失敗率を測る。失敗率が5%か30%かで、識別失敗時の扱いの重みが変わる。</p>
+        </div>
+      </section>
+
+      <!-- 3 -->
+      <section id="s3">
+        <h2><span class="n">03</span>参加者の動線</h2>
+        <p>投票1回あたりの流れを、時刻の記録点とあわせて示す。</p>
+        <div class="card">
+          <div class="flow">
+            <div class="fstep">
+              <div class="frail"><div class="fdot">1</div><div class="fline"></div></div>
+              <div class="fbody">
+                <h5>作成者が投票を作る</h5>
+                <p>固定URLを開く → 投票を作成 → 完了。この時点ではまだ誰にも見えていない。</p>
+              </div>
+            </div>
+            <div class="fstep">
+              <div class="frail"><div class="fdot">2</div><div class="fline"></div></div>
+              <div class="fbody">
+                <h5>作成者がURLをオープンチャットに貼る</h5>
+                <p><strong>ここが刺激提示時刻 T<sub>0</sub></strong>。すべての潜時はこの時刻を起点に計算する。アプリ側は「投稿しました」ボタンで明示的に記録する（<a href="#s5-5">5.5</a>）。</p>
+              </div>
+            </div>
+            <div class="fstep">
+              <div class="frail"><div class="fdot alt">3</div><div class="fline"></div></div>
+              <div class="fbody">
+                <h5>参加者がリンクをタップ</h5>
+                <p>LINE内ブラウザが開く → 自動ログイン（無操作・約2秒）→ 投票画面。<strong>記録：開封時刻</strong></p>
+              </div>
+            </div>
+            <div class="fstep">
+              <div class="frail"><div class="fdot alt">4</div><div class="fline"></div></div>
+              <div class="fbody">
+                <h5>選択肢を選んで確定</h5>
+                <p><strong>記録：投票時刻・選択内容</strong>。確定せずに閉じた場合も離脱として記録する。</p>
+              </div>
+            </div>
+            <div class="fstep">
+              <div class="frail"><div class="fdot">5</div></div>
+              <div class="fbody">
+                <h5>作成者が締め切る</h5>
+                <p>手動、または設定した終了日時で自動。<strong>記録：締切時刻</strong></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="callout">
+          <h4>URLは常に同じものを使う</h4>
+          <p>投票ごとに別URLを発行せず、<strong>研究グループに1つの固定URL</strong>を割り当てる。参加者は毎回同じリンクを開き、一覧画面から進行中の投票に入る。LINEの「グループの投票タブ」に構造が近くなり、URLの貼り間違いも防げる。</p>
+        </div>
+      </section>
+
+      <!-- 4 -->
+      <section id="s4">
+        <h2><span class="n">04</span>画面仕様</h2>
+        <p>提供されたスクリーンショットに対応する5画面を実装する。レイアウト・文言・配色はLINEに準拠する。</p>
+        <div class="screens">
+          <div class="screen">
+            <span class="tag">画面 A &middot; 画像1</span>
+            <h4>投票一覧（空の状態）</h4>
+            <p>過去の投票がないとき。中央にイラストと「投票を作成しましょう!」、その下に緑の「投票を作成」ボタン。</p>
+            <p><span class="chip c-crit">要差替</span> イラストはLINEのキャラクター。自作アイコンに置き換える（<a href="#s5-2">5.2</a>）。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 B &middot; 画像2</span>
+            <h4>投票一覧</h4>
+            <p>「進行中」の見出し、投票タイトル、「N人が参加中」、右端に「投票する」ボタン。右下に緑の丸い＋ボタン。</p>
+            <p><span class="chip c-open">要判断</span> 参加人数の表示は途中経過の一部にあたる（<a href="#s5-6">5.6</a>）。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 C &middot; 画像3</span>
+            <h4>投票を作成</h4>
+            <p>「テキスト / 日付」タブ、質問文の入力、番号付きの選択肢リスト。<strong>選択肢を入力すると次の空欄が自動追加される。</strong>下部にオプション、フッターにキャンセル / 完了。</p>
+            <p><span class="chip c-flat">作成者のみ</span> 日付タブは初期リリースでは非活性でよい。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 D &middot; 画像4</span>
+            <h4>作成オプション</h4>
+            <p>終了日時を設定 / 複数選択可 / 匿名投票 / 選択肢の追加を許可。の4つ。</p>
+            <p><span class="chip c-crit">要判断</span> 匿名投票と選択肢追加は研究設計に影響する（<a href="#s5-3">5.3</a>、<a href="#s5-4">5.4</a>）。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 E &middot; 画像5</span>
+            <h4>トーク内の投票カード</h4>
+            <p>投票箱の画像、「[投票] 質問文」、「投票にご参加ください。」、「投票する」リンク。</p>
+            <p><span class="chip c-crit">実装方法が異なる</span> 自動転送は不可能。OGPで再現する（<a href="#s5-1">5.1</a>）。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 F</span>
+            <h4>投票画面（未投票）</h4>
+            <p>ヘッダーは ホーム / 「投票する」 / ︙。オレンジ枠の「進行中」バッジ、質問文、「作成者: 名前」、右寄せで「N人が参加中」。選択肢は 丸 + ラベル + 票数 + バー。フッターは「投票を終了」と「投票」。</p>
+            <p><span class="chip c-crit">重要</span> <strong>未投票の時点で票数とバーが見えている</strong>（<a href="#s5-6">5.6</a>）。「投票」ボタンは選択するまで非活性。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 G</span>
+            <h4>投票画面（投票後）</h4>
+            <p>選んだ選択肢の丸がオレンジのチェックに変わり、バーがオレンジで伸びる。ボタンは「再投票」に変わる。</p>
+            <p><span class="chip c-flat">挙動</span> 「再投票」は<strong>選択を変更するまで非活性</strong>。同じ選択のまま押すことはできない。</p>
+          </div>
+          <div class="screen">
+            <span class="tag">画面 H</span>
+            <h4>終了確認ダイアログ</h4>
+            <p>背景を暗転させ、中央に「投票を終了しますか？」と キャンセル / 終了（緑）。</p>
+            <p><span class="chip c-open">要判断</span> 「投票を終了」ボタンを参加者にも見せるかどうか（<a href="#s5-8">5.8</a>）。</p>
+          </div>
+          <div class="screen" style="border-style:dashed">
+            <span class="tag">画面 I &middot; 未提供</span>
+            <h4>終了後の画面</h4>
+            <p>締切後の表示。バッジが「終了」に変わり、結果が確定表示になると想定。モックでは全モードで結果を開示する実装にしている。</p>
+            <p><span class="chip c-open">要確認</span></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5 -->
+      <section id="s5">
+        <h2><span class="n">05</span>LINE準拠できない点・要判断の点</h2>
+        <p>この章が本設計書の中心である。「全部LINE準拠」という方針に対して、技術的に不可能なもの、法的に避けるべきもの、研究設計上そのまま真似ると問題になるものを挙げる。</p>
+
+        <h3 id="s5-1"><span class="n">5.1</span>グループへの自動転送はできない<span class="chip c-crit">不可能</span></h3>
+        <p>LINEの投票は作成完了と同時にトークへカードが流れるが、これはLINE本体の機能である。オープンチャットには<strong>ボットを参加させられない</strong>ため、外部アプリからメッセージを送る手段が存在しない。LIFFの <code>liff.sendMessages()</code> もオープンチャット非対応。</p>
+        <div class="callout">
+          <h4>代替案：コピー＆貼り付け＋OGPカード</h4>
+          <p>完了画面に<strong>「コピーする」ボタン</strong>を置き、定型文とURLを1タップでクリップボードに入れる。作成者はトークに貼り付けるだけ。操作が1つ増えるが、増えるのは<strong>作成者だけ</strong>で、100名の参加者側の負担は変わらない。</p>
+          <p>見た目については、貼り付けたURLをLINEが展開するプレビュー（OGP）で再現できる。<code>og:title</code> に「[投票] 質問文」、<code>og:description</code> に「投票にご参加ください。」、<code>og:image</code> に自作の投票箱画像を設定すれば、画像5にかなり近いカードになる。</p>
+          <p class="rec">要検証：オープンチャットでURLプレビューが展開されるか。展開されない場合はテキストのみの案内になる。</p>
+        </div>
+
+        <h3 id="s5-2"><span class="n">5.2</span>キャラクター画像は使用できない<span class="chip c-crit">法務</span></h3>
+        <p>画像1の熊のイラスト、画像5のブラウンとコニーは、いずれもLINEの著作物である。複製すると著作権・商標の問題が生じ、<strong>論文にスクリーンショットを掲載する段階で必ず問題になる</strong>。</p>
+        <p>一方、<strong>レイアウト・操作フロー・配色は一般に問題になりにくい</strong>。緑（<code>#06C755</code>）を基調にした画面構成、角丸のカード、丸い＋ボタンといった「雰囲気」レベルの類似は維持してよい。</p>
+        <p class="rec" style="border-top:none;padding-top:0">対応：投票箱の抽象アイコンを自作し、キャラクターの位置に置く。他のLINE固有アセット（ロゴ、スタンプ）も一切使わない。</p>
+
+        <h3 id="s5-3"><span class="n">5.3</span>「匿名投票」オプションは危険<span class="chip c-crit">倫理</span></h3>
+        <div class="callout crit">
+          <h4>本設計書で最も重要な指摘</h4>
+          <p>LINEの「匿名投票」は<strong>他の参加者に投票者が見えない</strong>という意味である。しかし本アプリでは、匿名投票を選んでもサーバーには userId とタイムスタンプが記録される。研究の目的上、記録しないという選択肢はない。</p>
+          <p>参加者が「匿名＝記録されない」と解釈する可能性は高く、<strong>実質的に同意を得ないままデータを取ることになる</strong>。倫理審査で確実に指摘される。</p>
+          <p class="rec">推奨：オプション自体は残すが、ラベルを「投票した人を他の参加者に見せない」に変更し、同意画面にも「誰がいつ投票したかは研究のため記録されます」と明示する。ラベルの変更だけで誤解の大半は防げる。</p>
+        </div>
+
+        <h3 id="s5-4"><span class="n">5.4</span>「選択肢の追加を許可」は分析を複雑にする<span class="chip c-open">要判断</span></h3>
+        <p>参加者が選択肢を追加できると、<strong>選択肢の集合が時間とともに変化する</strong>。「その人が投票した時点でどの選択肢が存在したか」を追跡しないと分析できなくなり、後から選択肢が増えたことで投票を変更する人も出る。意思決定タイミングの研究としては交絡が一段増える。</p>
+        <p class="rec" style="border-top:none;padding-top:0">推奨：UIには残す（LINE準拠のため）が、作成時のデフォルトをOFFにし、実験用の投票では使わない運用とする。イベントログには <code>option_added</code> を記録しておき、万一使われても追跡できるようにする。</p>
+
+        <h3 id="s5-5"><span class="n">5.5</span>通知が送れないため、刺激提示時刻を別途記録する<span class="chip c-open">設計</span></h3>
+        <p>ボットが使えないため、投票開始のプッシュ通知は送れない。参加者が投票の存在を知るのは<strong>作成者がURLをトークに貼った瞬間</strong>である。投票の作成時刻とは一致しない（作成してから貼るまでに時間が空く）。</p>
+        <p>潜時をすべて T<sub>0</sub> 起点で計算するため、この時刻を正確に押さえる必要がある。完了画面のコピーボタンとは別に、<strong>「グループに投稿しました」ボタン</strong>を置き、押された時刻を <code>poll_published</code> として記録する。</p>
+
+        <h3 id="s5-6"><span class="n">5.6</span>途中経過をどこまで見せるか<span class="chip c-crit">最優先</span></h3>
+        <div class="callout crit">
+          <h4>スクリーンショットで判明：投票する前から結果が見えている</h4>
+          <p>画面Fは<strong>まだ投票していない状態</strong>だが、すでに各選択肢の票数とバー、そして「N人が参加中」が表示されている。つまりLINEの投票では、<strong>参加者は他人の選択を見てから自分の選択を決める</strong>。</p>
+          <p>100名規模でこれをそのまま再現すると、「60人が既にAを選んでいる」という情報が全員に届いた状態で意思決定が行われることになる。<strong>意思決定タイミングの研究において、これは無視できる大きさの影響ではない。</strong>主要な交絡要因にも、主要な観測対象にもなりうる。</p>
+          <p class="rec">この判断は他のどの未決事項よりも先に決める必要がある。データを取り始めてからでは条件をやり直せない。</p>
+        </div>
+        <div class="tw">
+          <table>
+            <thead><tr><th>案</th><th>内容</th><th>研究上の含意</th></tr></thead>
+            <tbody>
+              <tr><td class="nowrap">LINE準拠</td><td>誰が何に投票したか全員に見せる</td><td>再現度は最高。同調が支配的要因になりうる</td></tr>
+              <tr><td class="nowrap">人数のみ</td><td>「N人が投票済み」だけ表示し内訳は隠す</td><td>参加動機は残しつつ、選択肢への同調を防ぐ</td></tr>
+              <tr><td class="nowrap">完全に隠す</td><td>締切まで一切見せない</td><td>他者の影響を排除。LINEとの差が最大</td></tr>
+              <tr><td class="nowrap">条件操作</td><td>投票ごと・参加者ごとに切替</td><td>影響そのものを測定対象にできる。実装は重い</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="rec" style="border-top:none;padding-top:0">実装方針：投票ごとの設定フラグ <code>show_progress</code> として持たせ、どの案でも切り替えられる形で作る。決定は画面Fのスクリーンショットを見てから行う。</p>
+
+        <h3 id="s5-8"><span class="n">5.8</span>スクリーンショットから判明した細部</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>項目</th><th>実物の挙動</th><th>本アプリでの扱い</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="nowrap">アクセント色</td>
+                <td>投票画面のバッジ・チェック・バーは<strong>オレンジ</strong>（<code>#E8623F</code> 相当）。緑はボタンにのみ使われる</td>
+                <td>そのまま準拠。緑一色だと実物と印象が変わる</td>
+              </tr>
+              <tr>
+                <td class="nowrap">「投票を終了」ボタン</td>
+                <td>スクリーンショットは作成者の画面。参加者に見えるかは不明</td>
+                <td><strong>作成者のみに表示する。</strong>参加者に見えると誤操作で実験が中断する</td>
+              </tr>
+              <tr>
+                <td class="nowrap">「再投票」の活性条件</td>
+                <td>投票後、<strong>選択を変更するまで押せない</strong></td>
+                <td>準拠。<code>vote_changed</code> が意味のある変更だけを記録できる副次効果がある</td>
+              </tr>
+              <tr>
+                <td class="nowrap">作成者名の表示</td>
+                <td>「作成者: 渋谷佳吾」とLINEの表示名が出る</td>
+                <td>オープンチャットの表示名は取得できない。作成者は1名なので<strong>手入力で設定する</strong></td>
+              </tr>
+              <tr>
+                <td class="nowrap">︙メニュー</td>
+                <td>中身が未確認（編集・削除などと推測）</td>
+                <td>研究運用では不要。初期リリースでは空でよい</td>
+              </tr>
+              <tr>
+                <td class="nowrap">投票者の表示</td>
+                <td>非匿名時に誰が何に投票したかが見えるかは未確認</td>
+                <td>モックでは選択肢の下に名前を並べている。<a href="#s5-3">5.3</a>の判断と連動する</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="s5-7"><span class="n">5.7</span>その他の相違点</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>項目</th><th>扱い</th></tr></thead>
+            <tbody>
+              <tr><td class="nowrap">投票の変更</td><td>LINEは投票後の変更が可能。<strong>変更履歴は研究上価値が高い</strong>ので、上書きせず <code>vote_changed</code> として追記する</td></tr>
+              <tr><td class="nowrap">LINE表示名の取得</td><td>LINEログインで取れるのは<strong>実アカウントの名前とアイコン</strong>で、オープンチャットの表示名とは別物。参加者が匿名性を期待している場合、実名が研究者に見えるのは問題になりうる。既定では保存せず、userId のみを保持する</td></tr>
+              <tr><td class="nowrap">参加者の入れ替わり</td><td>オープンチャットは人の出入りがある。途中参加者・退出者をどう扱うか、分析時に定義が必要</td></tr>
+              <tr><td class="nowrap">同時進行の投票</td><td>一覧画面がある以上、複数の投票を並行できる。実験では1つずつ運用するのが無難</td></tr>
+              <tr><td class="nowrap">端末の時計ズレ</td><td>サーバー受信時刻を正とし、クライアント時刻も併記して差分を保存。異常な端末を検出できる</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 6 -->
+      <section id="s6">
+        <h2><span class="n">06</span>データ設計</h2>
+        <p>集計済みの表を持たず、<strong>起きたことを起きた順に追記するイベントログ</strong>を唯一の記録とする。「Aに何票入ったか」は毎回ログから数える。後から分析軸を変えたくなっても記録し直す必要がないため、研究用途では最も後悔しにくい形になる。</p>
+        <pre><i># events テーブルの実際の中身（イメージ）</i>
+2026-09-01T12:00:04.221Z  <b>U_admin</b>  poll_published   poll=17
+2026-09-01T12:02:10.882Z  <b>U_1a2b</b>   poll_opened      poll=17
+2026-09-01T12:02:31.447Z  <b>U_1a2b</b>   choice_focused   poll=17 opt=B
+2026-09-01T12:02:44.019Z  <b>U_1a2b</b>   vote_cast        poll=17 opt=B
+2026-09-01T12:03:02.556Z  <b>U_1a2b</b>   vote_changed     poll=17 opt=B-&gt;C
+2026-09-01T12:03:05.101Z  <b>U_1a2b</b>   page_hidden      poll=17
+2026-09-01T12:41:19.734Z  <b>U_9x8y</b>   poll_opened      poll=17
+2026-09-01T12:41:52.310Z  <b>U_9x8y</b>   page_hidden      poll=17   <i>← 開いたが投票せず離脱</i></pre>
+
+        <h3><span class="n">6.1</span>テーブル</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>テーブル</th><th>主なカラム</th><th>役割</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="nowrap mono">polls</td>
+                <td class="mono">id, title, options_json, created_by, created_at, published_at, closes_at, closed_at, multi_select, anonymous, allow_add_option, show_progress</td>
+                <td>投票の定義と設定</td>
+              </tr>
+              <tr>
+                <td class="nowrap mono">events</td>
+                <td class="mono">id, poll_id, user_id, type, payload_json, server_ts, client_ts</td>
+                <td>すべての記録。追記のみ、更新も削除もしない</td>
+              </tr>
+              <tr>
+                <td class="nowrap mono">participants</td>
+                <td class="mono">user_id, consented_at, first_seen_at, note</td>
+                <td>研究参加の同意状況。表示名は既定で保存しない</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3><span class="n">6.2</span>イベント種別</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>type</th><th>発生タイミング</th><th>研究上の用途</th></tr></thead>
+            <tbody>
+              <tr><td class="mono nowrap">poll_created</td><td>作成完了</td><td>&mdash;</td></tr>
+              <tr><td class="mono nowrap">poll_published</td><td>「投稿しました」を押した時</td><td><strong>T<sub>0</sub>（刺激提示時刻）</strong></td></tr>
+              <tr><td class="mono nowrap">poll_opened</td><td>投票画面が表示された時</td><td>開封潜時 = 開封 − T<sub>0</sub></td></tr>
+              <tr><td class="mono nowrap">choice_focused</td><td>選択肢に触れた時</td><td>迷いの検出</td></tr>
+              <tr><td class="mono nowrap">vote_cast</td><td>投票を確定した時</td><td>熟慮時間 = 投票 − 開封</td></tr>
+              <tr><td class="mono nowrap">vote_changed</td><td>投票を変更した時</td><td>意思決定の揺れ</td></tr>
+              <tr><td class="mono nowrap">vote_withdrawn</td><td>投票を取り消した時</td><td>同上</td></tr>
+              <tr><td class="mono nowrap">option_added</td><td>選択肢が追加された時</td><td>選択肢集合の変化の追跡</td></tr>
+              <tr><td class="mono nowrap">page_hidden</td><td>画面を離れた時</td><td>離脱・再訪の検出</td></tr>
+              <tr><td class="mono nowrap">poll_closed</td><td>締切</td><td>締切直前の駆け込みの分析</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <h4>時刻の扱い</h4>
+          <ul>
+            <li><strong>サーバー受信時刻（UTC・ミリ秒）を正とする。</strong>クライアント時計は信用しない。</li>
+            <li>クライアント時刻も <code>client_ts</code> に併記し、差分から端末の時計ズレを検出できるようにする。</li>
+            <li>「開いた」の定義は<strong>投票画面が実際に表示された時点</strong>とする。認証リダイレクト中は含めない。</li>
+            <li>バックグラウンドからの復帰は <code>page_hidden</code> / <code>poll_opened</code> の対で表現する。</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 7 -->
+      <section id="s7">
+        <h2><span class="n">07</span>認証と権限</h2>
+        <ol>
+          <li>参加者が固定URLを開く</li>
+          <li>サーバーが LINE の認可URLへリダイレクト（<strong>自動ログイン・無操作</strong>）</li>
+          <li>認可コードを受け取り、サーバー側でチャネルシークレットを使ってトークンに交換</li>
+          <li>IDトークンを検証して <code>userId</code> を取得</li>
+          <li>署名付きの HttpOnly Cookie でセッションを維持</li>
+        </ol>
+        <p>クライアントで取得したプロフィールをそのままサーバーに送る実装は<strong>してはならない</strong>（改ざん可能で、作成者権限の偽装につながる）。必ずIDトークンをサーバーで検証する。</p>
+        <div class="tw">
+          <table>
+            <thead><tr><th>権限</th><th>できること</th></tr></thead>
+            <tbody>
+              <tr><td class="nowrap">作成者</td><td>投票の作成、締切、結果の全件閲覧、CSV書き出し。<code>polls.created_by</code> と一致する userId のみ</td></tr>
+              <tr><td class="nowrap">参加者</td><td>投票、投票の変更。設定に応じた途中経過の閲覧</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <h4><span class="chip c-open">要設計</span>初回に見せる2つの画面</h4>
+          <p>参加者が初めてアクセスしたとき、<strong>LINEの権限許可画面</strong>（1タップ）と<strong>研究参加の同意画面</strong>が続けて出る。高齢の参加者にとって唯一の関門であり、ここでの離脱がそのまま欠測になる。</p>
+          <p class="rec">文言と画面設計は別途詰める。実際の権限許可画面がどう見えるかは、連携アプリの登録を解除して実機で確認しておく。</p>
+        </div>
+        <div class="callout crit">
+          <h4>識別に失敗しても投票は通す</h4>
+          <p>自動ログインが失敗した参加者に、メールアドレス入力を求めてはならない。そこで確実に脱落する。ログインに失敗した場合は<strong>識別を諦めて投票させ、端末ベースの仮IDと「未識別」フラグを付けて記録する</strong>。</p>
+          <p>これは実装の都合ではなく妥当性の問題である。ログインに失敗するのは古い端末や特殊な設定の層で、年齢や情報リテラシーと相関しうる。彼らを除外すると、<strong>測定対象である意思決定タイミングと相関した欠測</strong>が発生する。全員から投票を取り、識別できた分でメイン分析、できなかった分で脱落バイアスを検証する。</p>
+        </div>
+      </section>
+
+      <!-- 8 -->
+      <section id="s8">
+        <h2><span class="n">08</span>システム構成</h2>
+        <div class="tw">
+          <table>
+            <thead><tr><th>層</th><th>採用</th><th>理由</th></tr></thead>
+            <tbody>
+              <tr><td class="nowrap">実行環境</td><td>Cloudflare Workers</td><td>コールドスタートが実質ゼロ。時刻記録に遅延ノイズが乗らない。100名の同時アクセスにも余裕</td></tr>
+              <tr><td class="nowrap">データベース</td><td>Cloudflare D1（SQLite）</td><td>無料枠で書込1日10万行・容量5GB。プロジェクトが自動停止しない</td></tr>
+              <tr><td class="nowrap">フロント</td><td>Cloudflare Pages</td><td>APIと同一ドメインに揃えるとCookieの扱いが単純になる</td></tr>
+              <tr><td class="nowrap">認証</td><td>LINEログイン v2.1</td><td>LIFFは使わない（オープンチャット非対応のため）</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Supabaseは無料プランだと<strong>7日間アクセスがないとプロジェクトが自動停止</strong>するため、投票が散発的な研究運用には向かない。Google Apps Scriptはコールドスタートが数秒あるうえ、ウェブアプリのURLがリダイレクトするためLINEログインが要求するコールバックURLの完全一致と相性が悪い。いずれも上の2つの理由で見送る。</p>
+
+        <h3><span class="n">8.1</span>差し替え可能にしておく層</h3>
+        <p>モック段階ではデータベースを繋がず、この層の中身をメモリ上の配列にしておく。本番では同じ関数がAPIを叩くようになり、<strong>UI側のコードは変更しない</strong>。</p>
+        <pre><i>// data.js ── 画面側はこの関数しか呼ばない</i>
+export async function listPolls()                  { <i>...</i> }
+export async function getPoll(pollId)              { <i>...</i> }
+export async function createPoll(draft)            { <i>...</i> }
+export async function castVote(pollId, optionIds)  { <i>...</i> }
+export async function closePoll(pollId)            { <i>...</i> }
+export async function logEvent(type, payload)      { <i>...</i> }</pre>
+        <p>モックでは画面の隅に<strong>「今は誰として操作中か」の切り替え</strong>を置く。1人で複数の投票者を演じられるので、研究仲間への説明時に同調の見え方をその場で実演できる。イベントログも画面に流しておくと、取得できるデータを直接見せられる。</p>
+      </section>
+
+      <!-- 9 -->
+      <section id="s9">
+        <h2><span class="n">09</span>未決事項</h2>
+        <p>変更コストは、<strong>データを取り始める前なら安い</strong>。実験開始後に変えられないものから順に決める。</p>
+        <div class="tw">
+          <table>
+            <thead><tr><th>項目</th><th>変更コスト</th><th>必要な判断</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>記録するイベントの種類</td>
+                <td class="nowrap"><span class="chip c-crit">高い</span></td>
+                <td>実験開始後は過去に遡れない。<a href="#s6">6.2</a>の一覧で漏れがないか確認</td>
+              </tr>
+              <tr>
+                <td>匿名投票オプションの扱い</td>
+                <td class="nowrap"><span class="chip c-crit">高い</span></td>
+                <td>同意文と一体。倫理審査の前に確定させる（<a href="#s5-3">5.3</a>）</td>
+              </tr>
+              <tr>
+                <td>途中経過の可視性</td>
+                <td class="nowrap"><span class="chip c-crit">高い</span></td>
+                <td><strong>最優先。</strong>投票前から結果が見える仕様と判明したため、影響が想定より大きい。モックの3モードを比較して決める（<a href="#s5-6">5.6</a>）</td>
+              </tr>
+              <tr>
+                <td>「投票を終了」を誰に見せるか</td>
+                <td class="nowrap"><span class="chip c-flat">安い</span></td>
+                <td>作成者のみを推奨。実物の挙動が確認できれば準拠に戻せる（<a href="#s5-8">5.8</a>）</td>
+              </tr>
+              <tr>
+                <td>終了後の画面仕様</td>
+                <td class="nowrap"><span class="chip c-flat">安い</span></td>
+                <td>スクリーンショット未提供。モックでは結果を確定表示している</td>
+              </tr>
+              <tr>
+                <td>研究同意の取得方法と文面</td>
+                <td class="nowrap"><span class="chip c-crit">高い</span></td>
+                <td>100名からどう同意を得るか。アプリ内の初回画面で完結させるか、別途行うか</td>
+              </tr>
+              <tr>
+                <td>LINE表示名を保存するか</td>
+                <td class="nowrap"><span class="chip c-open">中</span></td>
+                <td>既定は保存しない。個人の特定が必要なら初回に自己申告を求める（<a href="#s5-7">5.7</a>）</td>
+              </tr>
+              <tr>
+                <td>自動ログインの失敗率</td>
+                <td class="nowrap"><span class="chip c-flat">安い</span></td>
+                <td>協力者5〜10名で実測。実装と並行で可</td>
+              </tr>
+              <tr>
+                <td>OGPカードの展開可否</td>
+                <td class="nowrap"><span class="chip c-flat">安い</span></td>
+                <td>実機で1回試すだけ（<a href="#s5-1">5.1</a>）</td>
+              </tr>
+              <tr>
+                <td>デザインの細部・配色</td>
+                <td class="nowrap"><span class="chip c-flat">安い</span></td>
+                <td>いつでも変更可</td>
+              </tr>
+              <tr>
+                <td>データベースの選定</td>
+                <td class="nowrap"><span class="chip c-flat">安い</span></td>
+                <td>差し替え層があるため後から変更可（<a href="#s8">8.1</a>）</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3><span class="n">9.1</span>次のアクション</h3>
+        <ol>
+          <li><span class="chip c-ok">完了</span> モックを作成した（<a href="https://claude.ai/code/artifact/b9a13d78-a811-412c-b201-4a3f5d0712cd">開く</a>）</li>
+          <li>モックを研究仲間に提示し、<strong>途中経過の可視性</strong>と<strong>匿名投票オプションの扱い</strong>について合意を取る</li>
+          <li>終了後の画面のスクリーンショットを用意する（残り1画面）</li>
+          <li>Cloudflare アカウントを用意し、バックエンドの実装に入る</li>
+          <li>協力者を集めて自動ログインの失敗率を実測する</li>
+        </ol>
+
+        <p class="foot">この設計書はドラフトである。5章の指摘事項（特に5.3の匿名投票）について合意が取れた時点で v1.0 とし、以降の変更は追記で管理する。</p>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

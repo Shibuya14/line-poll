@@ -1,0 +1,3 @@
+# .dev.vars にコピーして使う。ローカル開発専用。
+LINE_CHANNEL_SECRET=LINE Developersのチャネルシークレット
+SESSION_SECRET=openssl rand -hex 32 で作った値

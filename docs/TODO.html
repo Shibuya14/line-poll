@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body>
+<title>投票アプリ立ち上げチェックリスト</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --bg:#F0F3F0; --surface:#FFFFFF; --surface-2:#E7ECE8;
+    --ink:#14181A; --ink-2:#39433F; --muted:#67736F;
+    --line:#D7DED8; --line-2:#BDC7C0;
+    --accent:#12594A; --accent-soft:#DBE9E3;
+    --warn:#87590F; --warn-soft:#F5EAD3;
+    --crit:#94251E; --crit-soft:#F6E1DF;
+    --ok:#1D6A51; --ok-soft:#DCECE3;
+    --shadow:0 1px 2px rgba(20,24,26,.05), 0 8px 24px -16px rgba(20,24,26,.28);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#111513; --surface:#191F1C; --surface-2:#212926;
+      --ink:#E7EBE8; --ink-2:#C3CCC8; --muted:#93A09B;
+      --line:#2B3430; --line-2:#3C4742;
+      --accent:#5CC3A4; --accent-soft:#1B2F29;
+      --warn:#D6A445; --warn-soft:#302716;
+      --crit:#E28479; --crit-soft:#33201E;
+      --ok:#5CC3A4; --ok-soft:#1B2F29;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#111513; --surface:#191F1C; --surface-2:#212926;
+    --ink:#E7EBE8; --ink-2:#C3CCC8; --muted:#93A09B;
+    --line:#2B3430; --line-2:#3C4742;
+    --accent:#5CC3A4; --accent-soft:#1B2F29;
+    --warn:#D6A445; --warn-soft:#302716;
+    --crit:#E28479; --crit-soft:#33201E;
+    --ok:#5CC3A4; --ok-soft:#1B2F29;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:16px; line-height:1.8; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:830px; margin:0 auto; padding:0 22px 110px; }
+
+  header.mast{ padding:56px 0 26px; }
+  .eyebrow{ font-size:11.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 12px; }
+  h1{ font-family:"Shippori Mincho B1","Hiragino Mincho ProN",serif; font-weight:600;
+      font-size:clamp(27px,4.6vw,38px); line-height:1.35; margin:0 0 14px; text-wrap:balance; }
+  .lede{ margin:0; color:var(--ink-2); font-size:16px; max-width:60ch; }
+
+  /* progress */
+  .prog{ position:sticky; top:0; z-index:5; background:var(--bg); padding:14px 0 16px; margin-bottom:8px;
+         border-bottom:1px solid var(--line-2); display:flex; flex-direction:column; gap:9px; }
+  .prog .top{ display:flex; justify-content:space-between; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  .prog .n{ font-family:"JetBrains Mono",monospace; font-size:14px; font-variant-numeric:tabular-nums; color:var(--ink-2); }
+  .prog .n b{ font-size:22px; color:var(--accent); font-weight:500; }
+  .track{ height:6px; border-radius:3px; background:var(--surface-2); overflow:hidden; }
+  .track span{ display:block; height:100%; background:var(--accent); border-radius:3px; width:0; transition:width .3s ease; }
+  .reset{ border:1px solid var(--line-2); background:var(--surface); color:var(--muted); border-radius:6px;
+          padding:4px 11px; font-size:12px; cursor:pointer; font-family:inherit; }
+  .reset:hover{ border-color:var(--accent); color:var(--accent); }
+  @media (prefers-reduced-motion:reduce){ .track span{ transition:none; } }
+
+  section{ margin-top:44px; }
+  h2{ font-family:"Shippori Mincho B1","Hiragino Mincho ProN",serif; font-size:22px; font-weight:600;
+      margin:0 0 6px; line-height:1.45; display:flex; align-items:baseline; gap:13px; }
+  h2 .g{ font-family:"JetBrains Mono",monospace; font-size:13px; color:var(--accent); font-weight:500; flex:none; }
+  .shead{ margin:0 0 18px; color:var(--muted); font-size:14px; max-width:62ch; }
+
+  ul.items{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  li.item{ background:var(--surface); border:1px solid var(--line); border-radius:9px; box-shadow:var(--shadow); }
+  li.item label{ display:grid; grid-template-columns:24px minmax(0,1fr); gap:14px; padding:15px 18px; cursor:pointer; align-items:start; }
+  li.item input{ appearance:none; -webkit-appearance:none; width:22px; height:22px; margin:4px 0 0; flex:none;
+                 border:1.6px solid var(--line-2); border-radius:5px; background:var(--surface); cursor:pointer;
+                 display:grid; place-items:center; }
+  li.item input:checked{ background:var(--accent); border-color:var(--accent); }
+  li.item input:checked::after{ content:""; width:11px; height:6px; border-left:2.4px solid var(--surface);
+                                border-bottom:2.4px solid var(--surface); transform:rotate(-45deg) translate(1px,-2px); }
+  li.item input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .body{ display:flex; flex-direction:column; gap:5px; min-width:0; }
+  .row1{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  .t{ font-size:16px; font-weight:700; line-height:1.55; }
+  .why{ margin:0; font-size:14px; color:var(--ink-2); line-height:1.75; }
+  .meta{ font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--muted); margin:2px 0 0; }
+  li.item.done .t, li.item.done .why{ opacity:.42; text-decoration-color:var(--muted); }
+  li.item.done .t{ text-decoration:line-through; }
+
+  .chip{ display:inline-flex; font-size:10.5px; font-weight:700; letter-spacing:.07em; padding:2px 8px;
+         border-radius:3px; border:1px solid transparent; line-height:1.7; flex:none; }
+  .c-crit{ background:var(--crit-soft); color:var(--crit); border-color:var(--crit); }
+  .c-warn{ background:var(--warn-soft); color:var(--warn); border-color:var(--warn); }
+  .c-ok{ background:var(--ok-soft); color:var(--ok); border-color:var(--ok); }
+  .c-flat{ background:var(--surface-2); color:var(--muted); border-color:var(--line-2); }
+
+  .note{ background:var(--surface); border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
+         padding:16px 20px; display:flex; flex-direction:column; gap:9px; }
+  .note h3{ margin:0; font-size:15px; font-weight:700; }
+  .note p, .note ul{ margin:0; font-size:14px; color:var(--ink-2); max-width:62ch; }
+  .note ul{ padding-left:1.3em; display:flex; flex-direction:column; gap:6px; }
+  a{ color:var(--accent); }
+  code{ font-family:"JetBrains Mono",monospace; font-size:.85em; background:var(--surface-2);
+        border:1px solid var(--line); border-radius:4px; padding:1px 5px; word-break:break-all; }
+  .foot{ margin-top:44px; padding-top:20px; border-top:1px solid var(--line); font-size:13px; color:var(--muted); }
+</style>
+
+<div class="wrap">
+<header class="mast">
+  <p class="eyebrow">Keigo のTODO &middot; 2026-08-23 時点</p>
+  <h1>投票アプリ立ち上げチェックリスト</h1>
+  <p class="lede">あなたにしかできない作業だけを並べています。コードを書く作業は含めていません（最後の「私が引き受ける分」を参照）。上から順に着手すれば、待ち時間が重ならないように並べてあります。</p>
+</header>
+
+<div class="prog">
+  <div class="top">
+    <span class="n"><b id="pDone">0</b> / <span id="pAll">0</span> 完了</span>
+    <button class="reset" id="reset">チェックを全部外す</button>
+  </div>
+  <div class="track"><span id="pBar"></span></div>
+</div>
+
+<div class="note">
+  <h3>今週中に手を付けたい3つ</h3>
+  <ul>
+    <li><strong>倫理審査の要件を調べる</strong>（A-1）— 審査は月1回しか開かれないことが多く、ここが全体の律速になります</li>
+    <li><strong>途中経過の可視性を決める</strong>（A-3）— 実験を始めてからでは条件をやり直せません</li>
+    <li><strong>Cloudflareのトークンを作る</strong>（C-2）— 15分で終わり、これで実装が前に進みます</li>
+  </ul>
+</div>
+
+<section>
+  <h2><span class="g">A</span>研究デザインと倫理</h2>
+  <p class="shead">リードタイムが最も長く、後戻りが一番高くつく領域。データを取り始めてからでは変更できないものばかりです。</p>
+  <ul class="items">
+
+    <li class="item"><label><input type="checkbox" data-id="a1"><span class="body">
+      <span class="row1"><span class="t">倫理審査の要件と締切を調べる</span><span class="chip c-crit">最優先</span></span>
+      <p class="why">所属機関の様式、提出締切、審査会の開催頻度。多くの機関で月1回のため、ここを外すと1か月まるごと待つことになります。全体のスケジュールはこの日付から逆算して決まります。</p>
+      <p class="meta">目安 1時間 / 事務局に問い合わせ</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="a2"><span class="body">
+      <span class="row1"><span class="t">匿名投票オプションの扱いを決める</span><span class="chip c-crit">最優先</span></span>
+      <p class="why">「匿名＝記録されない」と誤解されると、実質的に同意なしでデータを取ることになります。推奨はラベルを「投票した人を他の参加者に見せない」に変えたうえで残す案。設計書5.3を読んで判断してください。</p>
+      <p class="meta">目安 30分 / 同意文と一体で決める</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="a3"><span class="body">
+      <span class="row1"><span class="t">途中経過の可視性を決める</span><span class="chip c-crit">最優先</span></span>
+      <p class="why">LINEの投票は<strong>投票する前から他人の選択が見えます</strong>。100人規模だと同調が支配的な要因になりかねません。モックの3モードを切り替えて、研究仲間と見比べてから決めてください。</p>
+      <p class="meta">目安 1時間 / モックを使って議論</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="a4"><span class="body">
+      <span class="row1"><span class="t">100人からどう同意を得るか決める</span><span class="chip c-warn">先に着手</span></span>
+      <p class="why">アプリの初回画面で完結させるか、別途説明の場を設けるか。前者なら文面がそのまま実装物になります。オープンチャットは出入りがあるので、途中参加者への対応も決めておく必要があります。</p>
+      <p class="meta">目安 1〜2時間</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="a5"><span class="body">
+      <span class="row1"><span class="t">同意文を書く</span><span class="chip c-flat">A-2, A-4 の後</span></span>
+      <p class="why">「投票した時刻が記録されること」「誰が投票したか研究者には分かること」を高齢の参加者に伝わる言葉で。ここが曖昧だと審査で止まります。</p>
+      <p class="meta">目安 2時間 / 下書きは手伝えます</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="a6"><span class="body">
+      <span class="row1"><span class="t">倫理審査に提出する</span><span class="chip c-flat">A-1〜A-5 の後</span></span>
+      <p class="why">審査中も実装は進められます。ただし<strong>本番のデータ取得は承認後</strong>。練習用の投票は dev 環境で回してください。</p>
+      <p class="meta">審査期間 数週間〜1か月</p>
+    </span></label></li>
+
+  </ul>
+</section>
+
+<section>
+  <h2><span class="g">B</span>実機で確かめること</h2>
+  <p class="shead">あなたのスマホと、協力者の端末が必要な作業。空き時間に少しずつ進められます。</p>
+  <ul class="items">
+
+    <li class="item"><label><input type="checkbox" data-id="b1"><span class="body">
+      <span class="row1"><span class="t">終了後の画面のスクリーンショットを撮る</span><span class="chip c-warn">先に着手</span></span>
+      <p class="why">残り1画面です。投票を終了したあとの表示（バッジが「終了」に変わった状態）を撮って送ってください。これで画面仕様が揃います。</p>
+      <p class="meta">目安 5分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="b2"><span class="body">
+      <span class="row1"><span class="t">初回の権限許可画面を実機で確認する</span></span>
+      <p class="why">LINEの 設定 → アカウント から今回のチャネルの連携を解除すると、初回状態に戻せます。<strong>参加者100人が最初に見る唯一の関門</strong>なので、文言が不安を与えないか自分の目で見ておく価値があります。</p>
+      <p class="meta">目安 10分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="b3"><span class="body">
+      <span class="row1"><span class="t">オープンチャットでURLプレビューが出るか確認する</span></span>
+      <p class="why">出るなら、LINEの投票カード（画像5）の見た目をOGPで再現できます。出ないならテキストのみの案内になります。検証用のオープンチャットに適当なURLを貼るだけで分かります。</p>
+      <p class="meta">目安 5分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="b4"><span class="body">
+      <span class="row1"><span class="t">協力者5〜10名で自動ログインの失敗率を測る</span><span class="chip c-warn">Android必須</span></span>
+      <p class="why">いまの成功実績は新しいiPhone1台だけです。<strong>失敗率が5%か30%かで設計の重みが変わります。</strong>古い端末とAndroidを必ず混ぜてください。診断ページのログを送ってもらう形で足ります。</p>
+      <p class="meta">目安 声かけ含めて数日 / 実装と並行可</p>
+    </span></label></li>
+
+  </ul>
+</section>
+
+<section>
+  <h2><span class="g">C</span>インフラを立てる</h2>
+  <p class="shead">あなたのアカウントでしかできない部分。ここが済むと、設計書で最後に残っていた未検証項目が消えます。</p>
+  <ul class="items">
+
+    <li class="item"><label><input type="checkbox" data-id="c1"><span class="body">
+      <span class="row1"><span class="t">CloudflareのアカウントIDを控える</span></span>
+      <p class="why">ダッシュボードの Workers &amp; Pages ページ右側、または URL の <code>dash.cloudflare.com/&lt;ここ&gt;</code> にある32桁。<code>infra/terraform.tfvars</code> に貼ります。</p>
+      <p class="meta">目安 5分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="c2"><span class="body">
+      <span class="row1"><span class="t">APIトークンを作る</span><span class="chip c-crit">最優先</span></span>
+      <p class="why">プロフィール → APIトークン → カスタムトークンを作成。権限は<strong>「Workers スクリプト: 編集」と「D1: 編集」の2つだけ</strong>。作成画面を閉じると二度と表示されないので、その場で <code>.env</code> に貼ってください。</p>
+      <p class="meta">目安 15分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="c3"><span class="body">
+      <span class="row1"><span class="t">make bootstrap から deploy まで通す</span><span class="chip c-flat">C-1, C-2 の後</span></span>
+      <p class="why"><code>make bootstrap</code> → <code>make secrets</code> → <code>make migrate</code> → <code>make deploy</code>。Terraformが「何を作るか」を表示して確認を求めるので、読んで <code>yes</code> と入力します。詰まったら画面をそのまま送ってください。</p>
+      <p class="meta">目安 30分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="c4"><span class="body">
+      <span class="row1"><span class="t">コールバックURLを追加する</span></span>
+      <p class="why">LINE Developers のLINEログイン設定に <code>https://&lt;配備先&gt;/auth/callback</code> を追加。<strong>完全一致</strong>でないと弾かれます。既存の診断ページ用URLは消さず、改行して追記してください。</p>
+      <p class="meta">目安 5分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="c5"><span class="body">
+      <span class="row1"><span class="t">実機でログインして userId を確認する</span><span class="chip c-ok">大きな節目</span></span>
+      <p class="why">配線確認の画面で「LINEでログイン」を押し、<code>userId: U1a2b...</code> が表示されれば<strong>設計書で最後に残っていた「認可コード → userId の交換」が実証されます。</strong>ここで技術的な未知はゼロになります。</p>
+      <p class="meta">目安 10分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="c6"><span class="body">
+      <span class="row1"><span class="t">実験開始前にチャネルを「公開済み」にする</span><span class="chip c-flat">実験直前</span></span>
+      <p class="why">「開発中」のままだと、あなた以外はログインできません。<strong>本番当日に気づくと詰みます。</strong>協力者テスト（B-4）の前に切り替えてください。</p>
+      <p class="meta">目安 2分 / 忘れやすい</p>
+    </span></label></li>
+
+  </ul>
+</section>
+
+<section>
+  <h2><span class="g">D</span>運用の準備</h2>
+  <p class="shead">実験を回し始める前に整えておくこと。</p>
+  <ul class="items">
+
+    <li class="item"><label><input type="checkbox" data-id="d1"><span class="body">
+      <span class="row1"><span class="t">検証用のオープンチャットを別に用意する</span></span>
+      <p class="why">本番の100人のオープンチャットでテストしないでください。参加者を混乱させますし、まだ同意も取れていません。自分1人のオープンチャットで足ります。</p>
+      <p class="meta">目安 5分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="d2"><span class="body">
+      <span class="row1"><span class="t">投票箱アイコンを用意する</span></span>
+      <p class="why">LINEのキャラクター（ブラウン・コニー）は著作物なので使えません。<strong>論文にスクリーンショットを載せる段階で必ず問題になります。</strong>抽象的な投票箱の絵に差し替えます。モックには仮のものが入っているので、そのままでもよければ不要です。</p>
+      <p class="meta">目安 30分 / 私が作ることもできます</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="d3"><span class="body">
+      <span class="row1"><span class="t">画面に出す作成者名を決める</span></span>
+      <p class="why">オープンチャットの表示名は取得できないため、「作成者: ○○」の部分は手入力になります。参加者が見て誰か分かる名前にしてください。</p>
+      <p class="meta">目安 1分</p>
+    </span></label></li>
+
+    <li class="item"><label><input type="checkbox" data-id="d4"><span class="body">
+      <span class="row1"><span class="t">練習と本番でデータベースを分ける</span><span class="chip c-flat">実験直前</span></span>
+      <p class="why"><code>terraform apply -var env=prod</code> で本番用の別データベースが立ちます。<strong>意思決定タイミングのデータは取り直しがきかない</strong>ので、練習データが混ざるのは避けたいところです。</p>
+      <p class="meta">目安 10分</p>
+    </span></label></li>
+
+  </ul>
+</section>
+
+<section>
+  <h2><span class="g">E</span>私が引き受ける分</h2>
+  <p class="shead">参考までに。ここはチェック不要です。</p>
+  <div class="note">
+    <ul>
+      <li>投票APIの実装（投票の作成・投票・締切・集計）</li>
+      <li>モックの画面を実データに繋ぐ</li>
+      <li>主催者画面とCSV書き出し</li>
+      <li>OGPカードの実装（B-3の結果しだい）</li>
+      <li>設計書の更新、同意文の下書き</li>
+      <li>詰まったところの調査と修正</li>
+    </ul>
+    <p>B-1（終了後の画面）とC-5（実機でのログイン確認）が済めば、あとは一気に組めます。</p>
+  </div>
+</section>
+
+<p class="foot">チェックの状態はこのブラウザにだけ保存されます。別の端末で開くと空の状態から始まります。</p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY = "polltodo_v1";
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type="checkbox"][data-id]'));
+
+  function load(){
+    try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch(e){ return {}; }
+  }
+  function save(state){
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
+  }
+  function paint(){
+    var done = 0;
+    boxes.forEach(function(b){
+      b.closest("li.item").classList.toggle("done", b.checked);
+      if (b.checked) done++;
+    });
+    document.getElementById("pDone").textContent = done;
+    document.getElementById("pAll").textContent = boxes.length;
+    document.getElementById("pBar").style.width = (boxes.length ? done / boxes.length * 100 : 0) + "%";
+  }
+
+  var state = load();
+  boxes.forEach(function(b){
+    if (state[b.dataset.id]) b.checked = true;
+    b.addEventListener("change", function(){
+      var s = load();
+      if (b.checked) s[b.dataset.id] = 1; else delete s[b.dataset.id];
+      save(s);
+      paint();
+    });
+  });
+  document.getElementById("reset").addEventListener("click", function(){
+    boxes.forEach(function(b){ b.checked = false; });
+    save({});
+    paint();
+  });
+  paint();
+})();
+</script>
+
+</body>
+</html>

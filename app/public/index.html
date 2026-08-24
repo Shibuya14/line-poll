@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>投票</title>
+<meta name="color-scheme" content="light">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="投票">
+<meta property="og:title" content="投票">
+<meta property="og:description" content="タップして投票に参加">
+<meta property="og:url" content="https://poll-dev.poll-timing-research.workers.dev/">
+<meta property="og:image" content="https://poll-dev.poll-timing-research.workers.dev/ogp.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  :root{ color-scheme: light; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:#fff; color:#111;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+    font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+    min-height:100vh; min-height:100dvh;
+    overscroll-behavior-y:none;
+  }
+
+  /* ---------- header / footer chrome ---------- */
+  .ph-head{
+    flex:none; display:grid; grid-template-columns:34px 1fr 34px; align-items:center;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 8px 12px; border-bottom:1px solid #F0F0F0; background:#fff;
+    position:sticky; top:0; z-index:5;
+  }
+  .ph-head .ttl{ text-align:center; font-weight:700; font-size:16px; color:#111; }
+  .ic{ width:34px; height:34px; display:grid; place-items:center; border:none; background:none; cursor:pointer; padding:0; border-radius:8px; color:#111; }
+  .ic:active{ background:#F4F4F4; }
+  .ic:focus-visible{ outline:2px solid #06C755; outline-offset:1px; }
+  .ic svg{ width:22px; height:22px; }
+  .ph-body{ flex:1; padding:0 20px 30px; }
+  .ph-foot{
+    flex:none; display:flex; gap:11px; padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 18px);
+    background:#fff; border-top:1px solid #F5F5F5; position:sticky; bottom:0;
+  }
+
+  .ln-btn{
+    flex:1; border:none; border-radius:6px; padding:14px 10px; font-size:15.5px; font-weight:700;
+    cursor:pointer; font-family:inherit; line-height:1.4; -webkit-appearance:none;
+  }
+  .ln-btn.grey{ background:#F2F2F2; color:#3C3C3C; }
+  .ln-btn.green{ background:#06C755; color:#fff; }
+  .ln-btn.green[disabled]{ background:#BFE7CD; color:#fff; cursor:default; }
+  .ln-btn.ghost{ background:#fff; color:#3C3C3C; border:1px solid #DDD; }
+
+  .empty{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; min-height:60vh; text-align:center; }
+  .empty .box{ width:120px; height:120px; opacity:.9; }
+  .empty p{ margin:0; font-size:15.5px; color:#333; font-weight:500; }
+  .btn-create{ background:#5AD07E; color:#fff; border:none; border-radius:7px; padding:14px 32px; font-size:15.5px; font-weight:700; cursor:pointer; font-family:inherit; }
+
+  .sect-label{ font-size:13.5px; color:#555; padding:16px 0 4px; }
+  .poll-row{ display:flex; align-items:flex-start; gap:12px; padding:10px 0 18px; border-bottom:1px solid #F5F5F5; }
+  .poll-row:last-child{ border-bottom:none; }
+  .poll-row .meta{ flex:1; min-width:0; }
+  .poll-row h4{ margin:0 0 3px; font-size:17px; font-weight:700; color:#111; line-height:1.45; word-break:break-word; }
+  .poll-row .sub{ font-size:13.5px; color:#8E8E8E; }
+  .btn-vote{ flex:none; background:#fff; border:1px solid #DEDEDE; border-radius:6px; padding:11px 15px; font-size:14px; font-weight:500; cursor:pointer; font-family:inherit; color:#111; }
+  .fab{
+    position:fixed; right:20px; bottom:calc(env(safe-area-inset-bottom,0px) + 22px); width:58px; height:58px; border-radius:50%;
+    background:#06C755; color:#fff; border:none; font-size:30px; line-height:1; cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,.25); display:grid; place-items:center; font-family:inherit; z-index:6;
+  }
+
+  .pill{ display:inline-block; border:1.5px solid #E8623F; color:#E8623F; border-radius:999px; padding:3px 15px; font-size:13.5px; font-weight:500; }
+  .pill.done{ border-color:#9AA0A6; color:#9AA0A6; }
+  .vote-head{ text-align:center; padding:22px 0 6px; display:flex; flex-direction:column; gap:9px; align-items:center; }
+  .vote-head h3{ margin:0; font-size:21px; font-weight:700; color:#111; line-height:1.45; word-break:break-word; }
+  .vote-head .author{ font-size:14px; color:#8E8E8E; }
+  .part{ text-align:right; font-size:14px; color:#9E9E9E; padding:20px 0 12px; min-height:20px; }
+
+  .opt{ display:grid; grid-template-columns:26px 1fr; gap:14px; align-items:start; padding:12px 0; cursor:pointer; }
+  .opt.locked{ cursor:default; }
+  .radio{ width:24px; height:24px; border-radius:50%; border:1.5px solid #D4D4D4; margin-top:3px; display:grid; place-items:center; background:#fff; flex:none; }
+  .radio.on{ background:#E8623F; border-color:#E8623F; }
+  .radio.on svg{ width:14px; height:14px; color:#fff; }
+  .opt .lab-wrap{ display:block; min-width:0; width:100%; }
+  .opt .lab{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .opt .lab .txt{ font-size:16px; font-weight:500; color:#111; word-break:break-word; }
+  .opt .lab .cnt{ font-size:16px; font-weight:700; color:#111; font-variant-numeric:tabular-nums; }
+  .bar{ display:block; height:7px; border-radius:4px; background:#EFEFEF; margin-top:9px; overflow:hidden; }
+  .bar span{ display:block; height:100%; background:#E8623F; border-radius:4px; width:0; transition:width .32s ease; }
+  @media (prefers-reduced-motion:reduce){ .bar span{ transition:none; } }
+
+  .cr-tabs{ display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #EEE; margin:0 -20px; }
+  .cr-tabs div{ text-align:center; padding:13px 0; font-size:15.5px; font-weight:500; color:#BDBDBD; }
+  .cr-tabs div.on{ color:#111; font-weight:700; box-shadow:inset 0 -2px 0 #111; }
+  .q-in{ width:100%; border:none; outline:none; font-size:19px; font-weight:700; padding:22px 0 40px; font-family:inherit; color:#111; background:#fff; }
+  .q-in::placeholder{ color:#C8C8C8; }
+  .opt-in-row{ display:grid; grid-template-columns:22px 1fr; gap:10px; align-items:center; border-top:1px solid #F0F0F0; padding:14px 0; }
+  .opt-in-row .num{ font-size:15px; color:#111; font-variant-numeric:tabular-nums; }
+  .opt-in-row.ghost .num{ color:#C8C8C8; }
+  .opt-in{ border:none; outline:none; font-size:16px; font-family:inherit; width:100%; color:#111; background:#fff; -webkit-appearance:none; }
+  .opt-in::placeholder{ color:#C8C8C8; }
+  .opts-group{ border-top:1px solid #F0F0F0; margin-top:26px; padding-top:8px; display:flex; flex-direction:column; }
+  .opt-toggle{ display:flex; align-items:center; gap:14px; padding:12px 0; cursor:pointer; font-size:15px; color:#333; user-select:none; }
+  .ring{ width:21px; height:21px; border-radius:50%; border:1.5px solid #CFCFCF; flex:none; display:grid; place-items:center; }
+  .ring.on{ border-color:#06C755; background:#06C755; }
+  .ring.on svg{ width:12px; height:12px; color:#fff; }
+
+  .urlbar{ flex:none; display:flex; align-items:center; gap:8px; padding:10px 20px 0; background:#fff; }
+  .urlbar .u{
+    flex:1; min-width:0; background:#F7F7F7; border-radius:6px; padding:9px 11px;
+    font-family:"JetBrains Mono",ui-monospace,monospace; font-size:11px; color:#7C7C7C;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .urlbar button{
+    flex:none; border:1px solid #DEDEDE; background:#fff; color:#111; border-radius:6px;
+    padding:9px 13px; font-size:12.5px; cursor:pointer; font-family:inherit; font-weight:500;
+  }
+  .urlbar button:active{ border-color:#06C755; color:#06C755; }
+
+  .modal-bg{ position:fixed; inset:0; background:rgba(0,0,0,.42); display:grid; place-items:center; padding:24px; z-index:20; }
+  .modal{ background:#fff; border-radius:12px; padding:30px 22px 18px; width:100%; max-width:300px; text-align:center; }
+  .modal p{ margin:0 0 22px; font-size:15.5px; color:#111; font-weight:500; }
+  .modal .row{ display:flex; gap:11px; }
+
+  .banner{ background:#FFF7E6; border:1px solid #F0DFB8; border-radius:8px; padding:12px 14px; margin:16px 0 4px; display:flex; flex-direction:column; gap:9px; }
+  .banner p{ margin:0; font-size:13px; color:#7A5B12; line-height:1.6; }
+  .banner .row{ display:flex; gap:8px; }
+  .banner button{ flex:1; font-size:13px; padding:9px 8px; border-radius:6px; border:1px solid #E2CE9E; background:#fff; color:#7A5B12; font-weight:700; cursor:pointer; font-family:inherit; }
+  .banner button.solid{ background:#06C755; border-color:#06C755; color:#fff; }
+
+  .toast{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 90px); transform:translateX(-50%);
+    background:rgba(20,20,20,.92); color:#fff; padding:10px 18px; border-radius:999px; font-size:13.5px;
+    z-index:30; opacity:0; pointer-events:none; transition:opacity .2s ease;
+  }
+  .toast.show{ opacity:1; }
+
+  .loading{ display:flex; align-items:center; justify-content:center; min-height:60vh; color:#AAA; font-size:14px; }
+  .err{ margin:20px 0; padding:14px; background:#FDEEEC; border:1px solid #F0C9C2; border-radius:8px; color:#94251E; font-size:13.5px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ===================== 状態 ===================== */
+const S = {
+  me: null,          // { authenticated, user_id }
+  screen: "loading",  // loading | list | create | poll | error
+  polls: [],
+  activePoll: null,   // shape() の結果
+  activePollId: null,
+  selection: undefined,
+  draft: null,
+  dialog: false,
+  errorMsg: ""
+};
+
+const $app = document.getElementById("app");
+const $toast = document.getElementById("toast");
+
+/* ===================== ユーティリティ ===================== */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const urlOf = id => location.origin + "/p/" + id;
+
+function toast(msg){
+  $toast.textContent = msg;
+  $toast.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => $toast.classList.remove("show"), 1700);
+}
+
+function copy(text){
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+    document.body.removeChild(ta);
+    return true;
+  } catch(e){ return false; }
+}
+
+async function api(path, opts){
+  const res = await fetch(path, Object.assign({ headers: { "content-type": "application/json" } }, opts));
+  let body = null;
+  try { body = await res.json(); } catch(e){}
+  if (!res.ok) {
+    const err = new Error((body && body.error) || ("HTTP " + res.status));
+    err.status = res.status; err.body = body;
+    throw err;
+  }
+  return body;
+}
+
+/** 見ている・離れたなどの観測イベント。失敗しても画面には影響させない。 */
+function beacon(type, pollId, payload){
+  fetch("/api/events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type, poll_id: pollId || null, payload: payload || {}, client_ts: Date.now() }),
+    keepalive: true
+  }).catch(() => {});
+}
+
+/* ===================== アイコン ===================== */
+const icHome = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>';
+const icBack = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
+const icCheck= '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
+const artBox = '<svg class="box" viewBox="0 0 120 120" fill="none" stroke="#DCDCDC" stroke-width="2.6" stroke-linejoin="round"><path d="M22 52h76v46H22z"/><path d="M22 52 34 32h52l12 20"/><path d="M60 32v20"/><path d="M46 68h28" stroke-linecap="round"/><path d="M52 74l6 6 12-14" stroke="#CFCFCF" stroke-linecap="round"/></svg>';
+
+/* ===================== ルーティング ===================== */
+function currentPollIdFromPath(){
+  const m = location.pathname.match(/^\/p\/([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+function go(path, replace){
+  if (replace) history.replaceState(null, "", path);
+  else history.pushState(null, "", path);
+  route();
+}
+window.addEventListener("popstate", route);
+
+async function route(){
+  const id = currentPollIdFromPath();
+  if (id) {
+    S.screen = "loading"; render();
+    if (S.activePollId && S.activePollId !== id) beacon("page_hidden", S.activePollId);
+    S.activePollId = id; S.selection = undefined;
+    try {
+      const r = await api("/api/polls/" + id);
+      S.activePoll = r.poll; S.screen = "poll";
+      beacon("poll_opened", id);
+    } catch(e){
+      S.screen = "error"; S.errorMsg = e.message || "投票が見つかりません";
+    }
+    render();
+  } else {
+    if (S.activePollId) { beacon("page_hidden", S.activePollId); S.activePollId = null; S.activePoll = null; }
+    S.screen = "list"; render();
+    await loadList();
+  }
+}
+
+async function loadList(){
+  try {
+    const r = await api("/api/polls");
+    S.polls = r.polls;
+  } catch(e){
+    S.screen = "error"; S.errorMsg = e.message;
+  }
+  render();
+}
+
+/* ===================== 描画 ===================== */
+function pollRow(p){
+  const showCount = p.closed || p.show_progress === "all" || p.show_progress === "count";
+  const notPublished = p.is_owner && !p.published_at && !p.closed;
+  return '<div class="poll-row"><div class="meta"><h4>'+esc(p.title)+'</h4>'+
+    '<div class="sub">'+(notPublished ? "未投稿" : (showCount ? p.participants+"人が参加中" : "&nbsp;"))+'</div></div>'+
+    '<button class="btn-vote" data-open="'+p.id+'">'+(p.closed?"結果を見る":"投票する")+'</button></div>';
+}
+
+function renderList(){
+  const open = S.polls.filter(p => !p.closed);
+  const done = S.polls.filter(p => p.closed);
+  const head = '<div class="ph-head"><span></span><div class="ttl">投票</div><span></span></div>';
+  let body;
+  if (!S.polls.length){
+    body = '<div class="ph-body"><div class="empty">'+artBox+
+      '<p>投票を作成しましょう!</p><button class="btn-create" data-act="new">投票を作成</button></div></div>';
+  } else {
+    let inner = "";
+    const pending = S.polls.find(p => p.is_owner && !p.published_at && !p.closed);
+    if (pending){
+      inner += '<div class="banner"><p>この投票はまだグループに投稿されていません。自動送信はできないため、URLをコピーしてオープンチャットに貼り付けてください。</p>'+
+        '<div class="row"><button data-act="copyurl" data-id="'+pending.id+'">コピーする</button>'+
+        '<button class="solid" data-act="published" data-id="'+pending.id+'">投稿しました</button></div></div>';
+    }
+    if (open.length){ inner += '<div class="sect-label">進行中</div>' + open.map(pollRow).join(""); }
+    if (done.length){ inner += '<div class="sect-label">終了</div>' + done.map(pollRow).join(""); }
+    body = '<div class="ph-body">'+inner+'</div><button class="fab" data-act="new" aria-label="投票を作成">+</button>';
+  }
+  $app.innerHTML = head + body;
+}
+
+function renderCreate(){
+  const d = S.draft;
+  const head = '<div class="ph-head"><button class="ic" data-act="cancel" aria-label="戻る">'+icBack+'</button>'+
+               '<div class="ttl">投票を作成</div><span></span></div>';
+  let rows = "";
+  d.options.forEach((v,i) => {
+    rows += '<div class="opt-in-row'+(v?"":" ghost")+'"><span class="num">'+(i+1)+'.</span>'+
+      '<input class="opt-in" data-idx="'+i+'" value="'+esc(v)+'" placeholder="選択肢を入力" autocomplete="off"></div>';
+  });
+  let toggles = "";
+  [["multi","複数選択可"],["anon","匿名投票（相手に名前を見せない）"],["addopt","選択肢の追加を許可"]]
+    .forEach(([k,label]) => {
+      toggles += '<label class="opt-toggle" data-tg="'+k+'"><span class="ring'+(d[k]?" on":"")+'">'+(d[k]?icCheck:"")+'</span>'+label+'</label>';
+    });
+  const body = '<div class="ph-body"><div class="cr-tabs"><div class="on">テキスト</div><div>日付</div></div>'+
+    '<input class="q-in" id="qIn" value="'+esc(d.title)+'" placeholder="質問を入力">'+
+    '<div>'+rows+'</div><div class="opts-group">'+toggles+'</div>'+
+    (d.anon ? '<p style="font-size:12.5px;color:#8E8E8E;line-height:1.7;margin-top:18px;">匿名投票でも、いつ投票したかは記録されます。他の参加者から名前が見えなくなるだけです。</p>' : '')+
+    '</div>';
+  const ok = d.title.trim() && d.options.filter(o => o.trim()).length >= 2;
+  const foot = '<div class="ph-foot"><button class="ln-btn grey" data-act="cancel">キャンセル</button>'+
+    '<button class="ln-btn green" data-act="done"'+(ok?"":" disabled")+'>完了</button></div>';
+  $app.innerHTML = head + body + foot;
+}
+
+function renderPoll(){
+  const p = S.activePoll;
+  const me = S.me.user_id;
+  const closed = p.closed;
+  const showCount = closed || p.show_progress === "all" || p.show_progress === "count";
+  const reveal = closed || p.show_progress === "all";
+  const sel = S.selection !== undefined ? S.selection : (p.my_vote ? p.my_vote[0] : null);
+  const total = Math.max(1, ...p.options.map(o => o.count || 0));
+
+  const head = '<div class="ph-head"><button class="ic" data-act="home" aria-label="一覧へ">'+icHome+'</button>'+
+               '<div class="ttl">投票する</div><span></span></div>';
+
+  let opts = "";
+  p.options.forEach(o => {
+    const on = sel === o.id;
+    const w = reveal ? Math.round((o.count||0) / total * 100) : 0;
+    // 表示名を保存していないため、参加者個人を示すチップは出さない(件数・バーのみ)。
+    opts += '<div class="opt'+(closed?" locked":"")+'" data-opt="'+o.id+'">'+
+      '<span class="radio'+(on?" on":"")+'">'+(on?icCheck:"")+'</span>'+
+      '<span class="lab-wrap"><span class="lab"><span class="txt">'+esc(o.label)+'</span>'+
+      (reveal ? '<span class="cnt">'+(o.count||0)+'</span>' : '')+'</span>'+
+      (reveal ? '<span class="bar"><span style="width:'+w+'%"></span></span>' : '')+
+      '</span></div>';
+  });
+
+  const body = '<div class="ph-body"><div class="vote-head">'+
+    '<span class="pill'+(closed?" done":"")+'">'+(closed?"終了":"進行中")+'</span>'+
+    '<h3>'+esc(p.title)+'</h3></div>'+
+    '<div class="part">'+(showCount ? p.participants+"人が参加中" : "")+'</div>'+
+    opts+'</div>';
+
+  const urlbar = (p.is_owner && !closed)
+    ? '<div class="urlbar"><span class="u">'+esc(urlOf(p.id))+'</span><button data-act="copypoll">コピー</button></div>'
+    : "";
+
+  let foot, extra = "";
+  if (closed){
+    foot = '<div class="ph-foot"><button class="ln-btn ghost" data-act="home">一覧に戻る</button></div>';
+  } else {
+    const changed = sel && (!p.my_vote || sel !== p.my_vote[0]);
+    const label = p.my_vote ? "再投票" : "投票";
+    const canPress = p.my_vote ? changed : !!sel;
+    foot = urlbar + '<div class="ph-foot">'+
+      (p.is_owner ? '<button class="ln-btn grey" data-act="askend">投票を終了</button>' : '')+
+      (!p.published_at && p.is_owner ? '' : '')+
+      '<button class="ln-btn green" data-act="cast"'+(canPress?"":" disabled")+'>'+label+'</button></div>';
+  }
+  if (S.dialog){
+    extra = '<div class="modal-bg"><div class="modal"><p>投票を終了しますか？</p>'+
+      '<div class="row"><button class="ln-btn grey" data-act="cancelend">キャンセル</button>'+
+      '<button class="ln-btn green" data-act="end">終了</button></div></div></div>';
+  }
+  $app.innerHTML = head + body + foot + extra;
+}
+
+function renderLoading(){
+  $app.innerHTML = '<div class="ph-head"><span></span><div class="ttl">投票</div><span></span></div>'+
+    '<div class="loading">読み込み中…</div>';
+}
+function renderError(){
+  $app.innerHTML = '<div class="ph-head"><button class="ic" data-act="home" aria-label="一覧へ">'+icHome+'</button><div class="ttl">投票</div><span></span></div>'+
+    '<div class="ph-body"><div class="err">'+esc(S.errorMsg)+'</div></div>';
+}
+
+function render(){
+  if (S.screen === "loading") return renderLoading();
+  if (S.screen === "error")   return renderError();
+  if (S.screen === "list")    return renderList();
+  if (S.screen === "create")  return renderCreate();
+  if (S.screen === "poll")    return renderPoll();
+}
+
+/* ===================== 操作 ===================== */
+document.addEventListener("click", async ev => {
+  const op = ev.target.closest("[data-open]");
+  if (op){ go("/p/" + op.dataset.open); return; }
+
+  const optEl = ev.target.closest("[data-opt]");
+  if (optEl && S.screen === "poll" && !S.activePoll.closed){
+    S.selection = optEl.dataset.opt;
+    beacon("choice_focused", S.activePoll.id, { opt: S.selection });
+    render(); return;
+  }
+
+  const tg = ev.target.closest("[data-tg]");
+  if (tg && S.screen === "create"){
+    ev.preventDefault();
+    S.draft[tg.dataset.tg] = !S.draft[tg.dataset.tg];
+    render(); return;
+  }
+
+  const btn = ev.target.closest("[data-act]");
+  if (!btn) return;
+
+  switch (btn.dataset.act){
+    case "new":
+      S.draft = { title:"", options:["",""], multi:false, anon:false, addopt:false };
+      S.screen = "create"; render();
+      setTimeout(() => { const q = document.getElementById("qIn"); if (q) q.focus(); }, 30);
+      break;
+
+    case "cancel":
+      S.screen = "list"; S.draft = null; render(); break;
+
+    case "done": {
+      const d = S.draft;
+      btn.disabled = true;
+      try {
+        const r = await api("/api/polls", { method:"POST", body: JSON.stringify({
+          title: d.title, options: d.options,
+          multi_select: d.multi, anonymous: d.anon, allow_add_option: d.addopt
+        })});
+        S.screen = "list"; S.draft = null;
+        await loadList();
+        toast("投票を作成しました");
+      } catch(e){
+        toast(e.message || "作成に失敗しました");
+        btn.disabled = false;
+      }
+      break;
+    }
+
+    case "copyurl": case "copypoll": {
+      const id = btn.dataset.id || (S.activePoll && S.activePoll.id);
+      const p = S.polls.find(x => x.id === id) || S.activePoll;
+      const ok = copy("[投票] " + (p ? p.title : "") + "\n投票にご参加ください。\n" + urlOf(id));
+      const restoreLabel = btn.dataset.act === "copypoll" ? "コピー" : "コピーする";
+      btn.textContent = ok ? "コピーしました" : "コピーできません";
+      setTimeout(() => { btn.textContent = restoreLabel; }, 1600);
+      break;
+    }
+
+    case "published": {
+      const id = btn.dataset.id;
+      try { await api("/api/polls/" + id + "/publish", { method:"POST" }); await loadList(); toast("投稿済みにしました"); }
+      catch(e){ toast(e.message); }
+      break;
+    }
+
+    case "home": go("/"); break;
+
+    case "cast": {
+      btn.disabled = true;
+      try {
+        const r = await api("/api/polls/" + S.activePoll.id + "/vote", {
+          method:"POST", body: JSON.stringify({ options: [S.selection] })
+        });
+        S.activePoll = r.poll; S.selection = undefined; render();
+        toast("投票しました");
+      } catch(e){ toast(e.message); btn.disabled = false; }
+      break;
+    }
+
+    case "askend": S.dialog = true; render(); break;
+    case "cancelend": S.dialog = false; render(); break;
+    case "end": {
+      try {
+        const r = await api("/api/polls/" + S.activePoll.id + "/close", { method:"POST" });
+        S.activePoll = r.poll; S.dialog = false; render();
+        toast("投票を終了しました");
+      } catch(e){ toast(e.message); S.dialog = false; render(); }
+      break;
+    }
+  }
+});
+
+document.addEventListener("input", ev => {
+  if (S.screen !== "create") return;
+  if (ev.target.id === "qIn"){ S.draft.title = ev.target.value; refreshDone(); return; }
+  if (ev.target.classList.contains("opt-in")){
+    const i = +ev.target.dataset.idx;
+    S.draft.options[i] = ev.target.value;
+    const last = S.draft.options[S.draft.options.length - 1];
+    if (last.trim() !== "" && S.draft.options.length < 20){
+      S.draft.options.push("");
+      const pos = ev.target.selectionStart;
+      render();
+      const again = document.querySelector('.opt-in[data-idx="'+i+'"]');
+      if (again){ again.focus(); again.setSelectionRange(pos,pos); }
+      return;
+    }
+    refreshDone();
+  }
+});
+function refreshDone(){
+  const d = S.draft;
+  const ok = d.title.trim() && d.options.filter(o => o.trim()).length >= 2;
+  const b = document.querySelector('[data-act="done"]');
+  if (b) b.disabled = !ok;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && S.activePollId) beacon("page_hidden", S.activePollId);
+});
+
+/* ===================== 起動 ===================== */
+async function boot(){
+  let me;
+  try { me = await api("/api/me"); }
+  catch(e){ me = { authenticated:false }; }
+
+  if (!me.authenticated){
+    location.href = "/auth/login?back=" + encodeURIComponent(location.pathname + location.search);
+    return; // LINEアプリ内なら無操作で戻ってくる
+  }
+  S.me = me;
+  route();
+}
+boot();
+</script>
+</body>
+</html>

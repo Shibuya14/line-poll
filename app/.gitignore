@@ -1,0 +1,14 @@
+.env
+node_modules/
+events.csv
+# terraform output から生成されるため(make config / setup.shが作る)
+wrangler.jsonc
+.wrangler/
+
+# Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.*
+infra/terraform.tfvars
+.dev.vars

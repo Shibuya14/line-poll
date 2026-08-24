@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body>
+<title>投票モック 研究用ワークベンチ</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --pg-bg:#EEF1EF; --pg-surface:#FFFFFF; --pg-surface-2:#E5EAE7;
+    --pg-ink:#151A18; --pg-ink-2:#3B4642; --pg-muted:#68746F;
+    --pg-line:#D6DED9; --pg-line-2:#BAC5BF;
+    --pg-accent:#12594A; --pg-accent-soft:#DAE9E2;
+    --pg-warn:#87590F; --pg-crit:#94251E;
+    --pg-shadow:0 1px 2px rgba(20,24,26,.05), 0 10px 30px -20px rgba(20,24,26,.35);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --pg-bg:#101413; --pg-surface:#181E1C; --pg-surface-2:#212926;
+      --pg-ink:#E7EBE9; --pg-ink-2:#C2CBC7; --pg-muted:#94A09B;
+      --pg-line:#2A3330; --pg-line-2:#3B4642;
+      --pg-accent:#5CC3A4; --pg-accent-soft:#1B2F29;
+      --pg-warn:#D6A445; --pg-crit:#E28479;
+      --pg-shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px -20px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --pg-bg:#101413; --pg-surface:#181E1C; --pg-surface-2:#212926;
+    --pg-ink:#E7EBE9; --pg-ink-2:#C2CBC7; --pg-muted:#94A09B;
+    --pg-line:#2A3330; --pg-line-2:#3B4642;
+    --pg-accent:#5CC3A4; --pg-accent-soft:#1B2F29;
+    --pg-warn:#D6A445; --pg-crit:#E28479;
+    --pg-shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px -20px rgba(0,0,0,.8);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--pg-bg); color:var(--pg-ink);
+    font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:15px; line-height:1.75; -webkit-font-smoothing:antialiased;
+  }
+  .page{ max-width:1200px; margin:0 auto; padding:34px 22px 90px; }
+
+  header.top{ display:flex; flex-direction:column; gap:9px; padding-bottom:22px; border-bottom:1px solid var(--pg-line-2); }
+  .kicker{ font-size:11.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--pg-accent); font-weight:700; }
+  h1{ margin:0; font-size:26px; font-weight:700; line-height:1.35; letter-spacing:.01em; }
+  header.top p{ margin:0; max-width:66ch; color:var(--pg-ink-2); font-size:14.5px; }
+
+  .board{ display:grid; grid-template-columns:1fr; gap:26px; padding-top:26px; align-items:start; }
+  @media (min-width:940px){ .board{ grid-template-columns:392px minmax(0,1fr); gap:36px; } .sticky{ position:sticky; top:20px; } }
+
+  /* ============ phone ============ */
+  .phone{
+    width:100%; max-width:392px; margin:0 auto;
+    background:#fff; color:#111; border:1px solid var(--pg-line-2);
+    border-radius:22px; box-shadow:var(--pg-shadow); overflow:hidden;
+    display:flex; flex-direction:column; height:700px; position:relative;
+    font-size:15px;
+  }
+  .ph-head{
+    flex:none; display:grid; grid-template-columns:34px 1fr 34px; align-items:center;
+    padding:14px 12px; border-bottom:1px solid #F0F0F0; background:#fff;
+  }
+  .ph-head .ttl{ text-align:center; font-weight:700; font-size:15.5px; color:#111; }
+  .ic{ width:34px; height:34px; display:grid; place-items:center; border:none; background:none; cursor:pointer; padding:0; border-radius:8px; color:#111; }
+  .ic:hover{ background:#F4F4F4; }
+  .ic:focus-visible{ outline:2px solid #06C755; outline-offset:1px; }
+  .ic svg{ width:21px; height:21px; }
+  .ph-body{ flex:1; overflow-y:auto; padding:0 20px; background:#fff; }
+  .ph-foot{ flex:none; display:flex; gap:11px; padding:14px 20px 20px; background:#fff; }
+
+  .ln-btn{
+    flex:1; border:none; border-radius:6px; padding:13px 10px; font-size:15px; font-weight:700;
+    cursor:pointer; font-family:inherit; line-height:1.4;
+  }
+  .ln-btn.grey{ background:#F2F2F2; color:#3C3C3C; }
+  .ln-btn.green{ background:#06C755; color:#fff; }
+  .ln-btn.green[disabled]{ background:#BFE7CD; color:#fff; cursor:default; }
+  .ln-btn.ghost{ background:#fff; color:#3C3C3C; border:1px solid #DDD; }
+
+  .empty{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; height:100%; text-align:center; }
+  .empty .box{ width:120px; height:120px; opacity:.9; }
+  .empty p{ margin:0; font-size:15.5px; color:#333; font-weight:500; }
+  .btn-create{ background:#5AD07E; color:#fff; border:none; border-radius:7px; padding:13px 30px; font-size:15.5px; font-weight:700; cursor:pointer; font-family:inherit; }
+
+  .sect-label{ font-size:13.5px; color:#555; padding:16px 0 4px; }
+  .poll-row{ display:flex; align-items:flex-start; gap:12px; padding:10px 0 18px; }
+  .poll-row .meta{ flex:1; min-width:0; }
+  .poll-row h4{ margin:0 0 2px; font-size:18px; font-weight:700; color:#111; line-height:1.45; word-break:break-word; }
+  .poll-row .sub{ font-size:13.5px; color:#8E8E8E; }
+  .btn-vote{ flex:none; background:#fff; border:1px solid #DEDEDE; border-radius:6px; padding:11px 15px; font-size:14px; font-weight:500; cursor:pointer; font-family:inherit; color:#111; }
+  .fab{
+    position:absolute; right:20px; bottom:22px; width:58px; height:58px; border-radius:50%;
+    background:#06C755; color:#fff; border:none; font-size:30px; line-height:1; cursor:pointer;
+    box-shadow:0 4px 12px rgba(0,0,0,.22); display:grid; place-items:center; font-family:inherit;
+  }
+
+  .pill{ display:inline-block; border:1.5px solid #E8623F; color:#E8623F; border-radius:999px; padding:3px 15px; font-size:13.5px; font-weight:500; }
+  .pill.done{ border-color:#9AA0A6; color:#9AA0A6; }
+  .vote-head{ text-align:center; padding:20px 0 6px; display:flex; flex-direction:column; gap:9px; align-items:center; }
+  .vote-head h3{ margin:0; font-size:21px; font-weight:700; color:#111; line-height:1.45; word-break:break-word; }
+  .vote-head .author{ font-size:14px; color:#8E8E8E; }
+  .part{ text-align:right; font-size:14px; color:#9E9E9E; padding:20px 0 12px; min-height:20px; }
+
+  .opt{ display:grid; grid-template-columns:26px 1fr; gap:14px; align-items:start; padding:11px 0; cursor:pointer; }
+  .opt.locked{ cursor:default; }
+  .radio{ width:24px; height:24px; border-radius:50%; border:1.5px solid #D4D4D4; margin-top:3px; display:grid; place-items:center; background:#fff; }
+  .radio.on{ background:#E8623F; border-color:#E8623F; }
+  .radio.on svg{ width:14px; height:14px; color:#fff; }
+  .opt .lab-wrap{ display:block; min-width:0; }
+  .opt .lab{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .opt .lab .txt{ font-size:16px; font-weight:500; color:#111; word-break:break-word; }
+  .opt .lab .cnt{ font-size:16px; font-weight:700; color:#111; font-variant-numeric:tabular-nums; }
+  .bar{ display:block; height:7px; border-radius:4px; background:#EFEFEF; margin-top:9px; overflow:hidden; }
+  .bar span{ display:block; height:100%; background:#E8623F; border-radius:4px; width:0; transition:width .32s ease; }
+  @media (prefers-reduced-motion:reduce){ .bar span{ transition:none; } }
+  .voters{ display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+  .av{ font-size:11px; background:#F1F1F1; color:#555; border-radius:999px; padding:1px 9px; }
+
+  .cr-tabs{ display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #EEE; margin:0 -20px; }
+  .cr-tabs div{ text-align:center; padding:13px 0; font-size:15.5px; font-weight:500; color:#BDBDBD; }
+  .cr-tabs div.on{ color:#111; font-weight:700; box-shadow:inset 0 -2px 0 #111; }
+  .q-in{ width:100%; border:none; outline:none; font-size:19px; font-weight:700; padding:22px 0 40px; font-family:inherit; color:#111; background:#fff; }
+  .q-in::placeholder{ color:#C8C8C8; }
+  .opt-in-row{ display:grid; grid-template-columns:22px 1fr; gap:10px; align-items:center; border-top:1px solid #F0F0F0; padding:14px 0; }
+  .opt-in-row .num{ font-size:15px; color:#111; font-variant-numeric:tabular-nums; }
+  .opt-in-row.ghost .num{ color:#C8C8C8; }
+  .opt-in{ border:none; outline:none; font-size:15.5px; font-family:inherit; width:100%; color:#111; background:#fff; }
+  .opt-in::placeholder{ color:#C8C8C8; }
+  .opts-group{ border-top:1px solid #F0F0F0; margin-top:26px; padding-top:8px; display:flex; flex-direction:column; }
+  .opt-toggle{ display:flex; align-items:center; gap:14px; padding:11px 0; cursor:pointer; font-size:15px; color:#333; }
+  .ring{ width:21px; height:21px; border-radius:50%; border:1.5px solid #CFCFCF; flex:none; display:grid; place-items:center; }
+  .ring.on{ border-color:#06C755; background:#06C755; }
+  .ring.on svg{ width:12px; height:12px; color:#fff; }
+
+  .urlbar{ flex:none; display:flex; align-items:center; gap:8px; padding:10px 20px 0; background:#fff; }
+  .urlbar .u{
+    flex:1; min-width:0; background:#F7F7F7; border-radius:6px; padding:8px 11px;
+    font-family:"JetBrains Mono",ui-monospace,monospace; font-size:11.5px; color:#7C7C7C;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .urlbar button{
+    flex:none; border:1px solid #DEDEDE; background:#fff; color:#111; border-radius:6px;
+    padding:8px 13px; font-size:12.5px; cursor:pointer; font-family:inherit; font-weight:500;
+  }
+  .urlbar button:hover{ border-color:#06C755; color:#06C755; }
+  .modal-bg{ position:absolute; inset:0; background:rgba(0,0,0,.42); display:grid; place-items:center; padding:24px; }
+  .modal{ background:#fff; border-radius:12px; padding:30px 22px 18px; width:100%; max-width:290px; text-align:center; }
+  .modal p{ margin:0 0 22px; font-size:15.5px; color:#111; font-weight:500; }
+  .modal .row{ display:flex; gap:11px; }
+
+  .banner{ background:#FFF7E6; border:1px solid #F0DFB8; border-radius:8px; padding:12px 14px; margin:16px 0 4px; display:flex; flex-direction:column; gap:9px; }
+  .banner p{ margin:0; font-size:13px; color:#7A5B12; line-height:1.6; }
+  .banner .row{ display:flex; gap:8px; }
+  .banner button{ flex:1; font-size:13px; padding:9px 8px; border-radius:6px; border:1px solid #E2CE9E; background:#fff; color:#7A5B12; font-weight:700; cursor:pointer; font-family:inherit; }
+  .banner button.solid{ background:#06C755; border-color:#06C755; color:#fff; }
+
+  /* ============ research panel ============ */
+  .panel{ display:flex; flex-direction:column; gap:18px; min-width:0; }
+  .pcard{ background:var(--pg-surface); border:1px solid var(--pg-line); border-radius:10px; padding:16px 18px; display:flex; flex-direction:column; gap:12px; box-shadow:var(--pg-shadow); }
+  .pcard h2{ margin:0; font-size:13px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--pg-muted); }
+  .pcard .hint{ margin:0; font-size:13px; color:var(--pg-muted); line-height:1.65; }
+  .segs{ display:flex; flex-wrap:wrap; gap:7px; }
+  .seg{
+    border:1px solid var(--pg-line-2); background:var(--pg-surface); color:var(--pg-ink-2);
+    border-radius:999px; padding:6px 14px; font-size:13.5px; cursor:pointer; font-family:inherit; line-height:1.5;
+  }
+  .seg:hover{ border-color:var(--pg-accent); }
+  .seg:focus-visible{ outline:2px solid var(--pg-accent); outline-offset:2px; }
+  .seg.on{ background:var(--pg-accent); border-color:var(--pg-accent); color:var(--pg-surface); font-weight:700; }
+  .seg .tagname{ font-size:11px; opacity:.75; margin-left:6px; font-family:"JetBrains Mono",monospace; }
+
+  .logwrap{ background:var(--pg-surface); border:1px solid var(--pg-line); border-radius:10px; overflow:hidden; box-shadow:var(--pg-shadow); }
+  .loghead{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; border-bottom:1px solid var(--pg-line); flex-wrap:wrap; }
+  .loghead h2{ margin:0; font-size:13px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--pg-muted); }
+  .loghead .acts{ display:flex; gap:7px; }
+  .mini{ border:1px solid var(--pg-line-2); background:var(--pg-surface); color:var(--pg-ink-2); border-radius:6px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; }
+  .mini:hover{ border-color:var(--pg-accent); color:var(--pg-accent); }
+  .logscroll{ max-height:330px; overflow:auto; }
+  table.log{ width:100%; border-collapse:collapse; font-family:"JetBrains Mono",ui-monospace,monospace; font-size:11.5px; font-variant-numeric:tabular-nums; min-width:520px; }
+  table.log th{ position:sticky; top:0; background:var(--pg-surface-2); color:var(--pg-muted); text-align:left; padding:7px 12px; font-weight:500; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+  table.log td{ padding:6px 12px; border-top:1px solid var(--pg-line); vertical-align:top; white-space:nowrap; color:var(--pg-ink-2); }
+  table.log td.t{ color:var(--pg-accent); }
+  table.log td.pl{ white-space:normal; color:var(--pg-muted); }
+  table.log tr.new td{ background:var(--pg-accent-soft); }
+  .logempty{ padding:26px 18px; color:var(--pg-muted); font-size:13px; }
+  .derived{ display:flex; flex-wrap:wrap; gap:10px; }
+  .stat{ flex:1 1 128px; background:var(--pg-surface-2); border-radius:8px; padding:10px 13px; display:flex; flex-direction:column; gap:1px; }
+  .stat .k{ font-size:11px; color:var(--pg-muted); letter-spacing:.05em; }
+  .stat .v{ font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; font-family:"JetBrains Mono",monospace; }
+  .note{ font-size:12.5px; color:var(--pg-muted); line-height:1.7; margin:0; }
+  .note b{ color:var(--pg-ink-2); }
+</style>
+
+<div class="page">
+  <header class="top">
+    <span class="kicker">Mock &middot; データベース未接続</span>
+    <h1>投票モック 研究用ワークベンチ</h1>
+    <p>LINEの投票機能を再現した画面と、そこから取れるデータを並べて確認するためのモックです。左が参加者に見える画面、右が記録されるイベント。操作するユーザーを切り替えれば、1人で複数の投票者を演じられます。</p>
+  </header>
+
+  <div class="board">
+    <div class="sticky">
+      <div class="phone" id="phone"></div>
+    </div>
+
+    <div class="panel">
+      <div class="pcard">
+        <h2>操作中のユーザー</h2>
+        <div class="segs" id="userSegs"></div>
+        <p class="hint">実際には LINE ログインで自動的に判別されます。ここを切り替えると、別の参加者として同じ投票を開いたことになります。</p>
+      </div>
+
+      <div class="pcard">
+        <h2>途中経過の見せ方</h2>
+        <div class="segs" id="modeSegs"></div>
+        <p class="hint" id="modeHint"></p>
+      </div>
+
+      <div class="pcard">
+        <h2>ログから導出した指標</h2>
+        <div class="derived" id="derived"></div>
+        <p class="note">集計値はどこにも保存していません。<b>すべてイベントログを数え直して出しています。</b>後から分析軸を変えても、記録し直す必要がありません。</p>
+      </div>
+
+      <div class="logwrap">
+        <div class="loghead">
+          <h2>イベントログ</h2>
+          <div class="acts">
+            <button class="mini" id="csvBtn">CSVをコピー</button>
+            <button class="mini" id="resetBtn">最初から</button>
+          </div>
+        </div>
+        <div class="logscroll" id="logScroll"><div class="logempty">まだイベントはありません。左の画面を操作してください。</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const USERS = [
+  { id:"U_admin", name:"渋谷佳吾", role:"作成者" },
+  { id:"U_1a2b",  name:"田中ハナ", role:"参加者" },
+  { id:"U_3c4d",  name:"鈴木タロウ", role:"参加者" },
+  { id:"U_5e6f",  name:"山本ケイ", role:"参加者" }
+];
+const MODES = [
+  { id:"line",   label:"LINE準拠",   tag:"show_progress=all",
+    hint:"票数・バー・参加人数をすべて表示します。実物と同じですが、投票する前から他人の選択が見えるため、100人規模では同調が強く働きます。" },
+  { id:"count",  label:"人数のみ",   tag:"show_progress=count",
+    hint:"「N人が参加中」だけを残し、選択肢ごとの内訳を隠します。参加への動機づけは保ちつつ、特定の選択肢への同調を防ぎます。" },
+  { id:"hidden", label:"完全に隠す", tag:"show_progress=none",
+    hint:"締切まで一切見せません。他者の影響を排除できますが、LINEとの見た目の差が最も大きくなります。" }
+];
+
+const S = {
+  screen:"list", activePollId:null, currentUser:"U_admin",
+  mode:"line", polls:[], events:[], seq:0, dialog:false,
+  draft:null, pending:null, lastLogged:0
+};
+
+/* ---------- utils ---------- */
+const $ = id => document.getElementById(id);
+const user = id => USERS.find(u => u.id === id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const poll = () => S.polls.find(p => p.id === S.activePollId) || null;
+const urlOf = id => "https://vote.example.app/v/" + id;
+function stamp(d){
+  const p = n => String(n).padStart(2,"0");
+  return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+"."+String(d.getMilliseconds()).padStart(3,"0");
+}
+function logEvent(type, pollId, payload){
+  const now = new Date();
+  S.events.push({ n:++S.seq, ts:now, type, pollId:pollId??"", userId:S.currentUser, payload:payload||{} });
+  S.lastLogged = S.seq;
+}
+
+/* ---------- derive state from the event log ---------- */
+function votesOf(pollId){
+  const m = new Map();
+  for (const e of S.events){
+    if (e.pollId !== pollId) continue;
+    if (e.type === "vote_cast" || e.type === "vote_changed") m.set(e.userId, e.payload.to);
+    if (e.type === "vote_withdrawn") m.delete(e.userId);
+  }
+  return m;
+}
+function countsOf(p){
+  const v = votesOf(p.id), c = {};
+  p.options.forEach(o => c[o.id] = []);
+  v.forEach((optId, uid) => { if (c[optId]) c[optId].push(uid); });
+  return { counts:c, participants:v.size, myVote:v.get(S.currentUser) || null };
+}
+function openersOf(pollId){
+  const s = new Set();
+  for (const e of S.events) if (e.pollId === pollId && e.type === "poll_opened") s.add(e.userId);
+  return s;
+}
+
+/* ---------- icons ---------- */
+const icHome = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>';
+const icDots = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
+const icCheck= '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
+const artBox = '<svg class="box" viewBox="0 0 120 120" fill="none" stroke="#DCDCDC" stroke-width="2.6" stroke-linejoin="round"><path d="M22 52h76v46H22z"/><path d="M22 52 34 32h52l12 20"/><path d="M60 32v20"/><path d="M46 68h28" stroke-linecap="round"/><path d="M52 74l6 6 12-14" stroke="#CFCFCF" stroke-linecap="round"/></svg>';
+
+/* ---------- render: phone ---------- */
+function renderPhone(){
+  const el = $("phone");
+  let head = "", body = "", foot = "", extra = "";
+  const me = S.currentUser;
+
+  if (S.screen === "list"){
+    const open = S.polls.filter(p => !p.closedAt);
+    const done = S.polls.filter(p => p.closedAt);
+    head = '<div class="ph-head"><span></span><div class="ttl">投票</div><span></span></div>';
+    if (!S.polls.length){
+      body = '<div class="ph-body"><div class="empty">'+artBox+
+        '<p>投票を作成しましょう!</p><button class="btn-create" data-act="new">投票を作成</button></div></div>';
+    } else {
+      let inner = "";
+      if (S.pending && S.pending.by === me){
+        inner += '<div class="banner"><p>この投票はまだグループに投稿されていません。自動送信はできないため、URLをコピーしてオープンチャットに貼り付けてください。</p>'+
+          '<div class="row"><button data-act="copyurl">コピーする</button>'+
+          '<button class="solid" data-act="published">投稿しました</button></div></div>';
+      }
+      if (open.length){
+        inner += '<div class="sect-label">進行中</div>';
+        inner += open.map(p => pollRow(p)).join("");
+      }
+      if (done.length){
+        inner += '<div class="sect-label">終了</div>';
+        inner += done.map(p => pollRow(p)).join("");
+      }
+      body = '<div class="ph-body">'+inner+'</div>';
+      extra = '<button class="fab" data-act="new" aria-label="投票を作成">+</button>';
+    }
+  }
+
+  else if (S.screen === "create"){
+    const d = S.draft;
+    head = '<div class="ph-head"><button class="ic" data-act="cancel" aria-label="戻る">&lsaquo;</button>'+
+           '<div class="ttl">投票を作成</div><span></span></div>';
+    let rows = "";
+    d.options.forEach((v,i) => {
+      rows += '<div class="opt-in-row'+(v?"":" ghost")+'"><span class="num">'+(i+1)+'.</span>'+
+        '<input class="opt-in" data-idx="'+i+'" value="'+esc(v)+'" placeholder="選択肢を入力"></div>';
+    });
+    let toggles = "";
+    [["closes","終了日時を設定"],["multi","複数選択可"],["anon","匿名投票"],["addopt","選択肢の追加を許可"]]
+      .forEach(([k,label]) => {
+        toggles += '<label class="opt-toggle" data-tg="'+k+'"><span class="ring'+(d[k]?" on":"")+'">'+(d[k]?icCheck:"")+'</span>'+label+'</label>';
+      });
+    body = '<div class="ph-body"><div class="cr-tabs"><div class="on">テキスト</div><div>日付</div></div>'+
+      '<input class="q-in" id="qIn" value="'+esc(d.title)+'" placeholder="質問を入力">'+
+      '<div>'+rows+'</div><div class="opts-group">'+toggles+'</div></div>';
+    const ok = d.title.trim() && d.options.filter(o => o.trim()).length >= 2;
+    foot = '<div class="ph-foot"><button class="ln-btn grey" data-act="cancel">キャンセル</button>'+
+      '<button class="ln-btn green" data-act="done"'+(ok?"":" disabled")+'>完了</button></div>';
+  }
+
+  else if (S.screen === "poll"){
+    const p = poll();
+    const { counts, participants, myVote } = countsOf(p);
+    const closed = !!p.closedAt;
+    const reveal = closed || S.mode === "line";
+    const showCount = closed || S.mode === "line" || S.mode === "count";
+    const sel = S.selection !== undefined && S.selection !== null ? S.selection : myVote;
+    const total = Math.max(1, ...p.options.map(o => counts[o.id].length));
+
+    head = '<div class="ph-head"><button class="ic" data-act="home" aria-label="一覧へ">'+icHome+'</button>'+
+           '<div class="ttl">投票する</div><button class="ic" aria-label="メニュー">'+icDots+'</button></div>';
+
+    let opts = "";
+    p.options.forEach(o => {
+      const list = counts[o.id];
+      const on = sel === o.id;
+      const w = reveal ? Math.round(list.length / total * 100) : 0;
+      let voters = "";
+      if (reveal && !p.anon && list.length){
+        voters = '<div class="voters">'+list.map(u => '<span class="av">'+esc(user(u).name)+'</span>').join("")+'</div>';
+      }
+      opts += '<div class="opt'+(closed?" locked":"")+'" data-opt="'+o.id+'">'+
+        '<span class="radio'+(on?" on":"")+'">'+(on?icCheck:"")+'</span>'+
+        '<span class="lab-wrap"><span class="lab"><span class="txt">'+esc(o.label)+'</span>'+
+        (reveal ? '<span class="cnt">'+list.length+'</span>' : '')+'</span>'+
+        (reveal ? '<span class="bar"><span style="width:'+w+'%"></span></span>' : '')+
+        voters+'</span></div>';
+    });
+
+    body = '<div class="ph-body"><div class="vote-head">'+
+      '<span class="pill'+(closed?" done":"")+'">'+(closed?"終了":"進行中")+'</span>'+
+      '<h3>'+esc(p.title)+'</h3>'+
+      '<span class="author">作成者: '+esc(user(p.createdBy).name)+'</span></div>'+
+      '<div class="part">'+(showCount ? participants+"人が参加中" : "")+'</div>'+
+      opts+'</div>';
+
+    const urlbar = (p.createdBy === me && !closed)
+      ? '<div class="urlbar"><span class="u">'+esc(urlOf(p.id))+'</span>'+
+        '<button data-act="copypoll">コピー</button></div>'
+      : "";
+
+    if (closed){
+      foot = '<div class="ph-foot"><button class="ln-btn ghost" data-act="home">一覧に戻る</button></div>';
+    } else {
+      const changed = sel && sel !== myVote;
+      const label = myVote ? "再投票" : "投票";
+      const canPress = myVote ? changed : !!sel;
+      foot = urlbar + '<div class="ph-foot">'+
+        (p.createdBy === me ? '<button class="ln-btn grey" data-act="askend">投票を終了</button>' : '')+
+        '<button class="ln-btn green" data-act="cast"'+(canPress?"":" disabled")+'>'+label+'</button></div>';
+    }
+    if (S.dialog){
+      extra = '<div class="modal-bg"><div class="modal"><p>投票を終了しますか？</p>'+
+        '<div class="row"><button class="ln-btn grey" data-act="cancelend">キャンセル</button>'+
+        '<button class="ln-btn green" data-act="end">終了</button></div></div></div>';
+    }
+  }
+
+  el.innerHTML = head + body + foot + extra;
+}
+function pollRow(p){
+  const { participants } = countsOf(p);
+  const showCount = p.closedAt || S.mode === "line" || S.mode === "count";
+  return '<div class="poll-row"><div class="meta"><h4>'+esc(p.title)+'</h4>'+
+    '<div class="sub">'+(showCount ? participants+"人が参加中" : "&nbsp;")+'</div></div>'+
+    '<button class="btn-vote" data-open="'+p.id+'">'+(p.closedAt?"結果を見る":"投票する")+'</button></div>';
+}
+
+/* ---------- render: panel ---------- */
+function renderPanel(){
+  $("userSegs").innerHTML = USERS.map(u =>
+    '<button class="seg'+(u.id===S.currentUser?" on":"")+'" data-user="'+u.id+'">'+esc(u.name)+
+    '<span class="tagname">'+u.role+'</span></button>').join("");
+
+  $("modeSegs").innerHTML = MODES.map(m =>
+    '<button class="seg'+(m.id===S.mode?" on":"")+'" data-mode="'+m.id+'">'+m.label+
+    '<span class="tagname">'+m.tag+'</span></button>').join("");
+  $("modeHint").textContent = MODES.find(m => m.id === S.mode).hint;
+
+  const p = poll();
+  let stats = [];
+  if (p){
+    const { participants } = countsOf(p);
+    const opened = openersOf(p.id).size;
+    const t0 = S.events.find(e => e.pollId === p.id && e.type === "poll_published");
+    const firstVote = S.events.find(e => e.pollId === p.id && e.type === "vote_cast");
+    const lat = (t0 && firstVote) ? ((firstVote.ts - t0.ts)/1000).toFixed(1)+"s" : "—";
+    stats = [
+      ["開いた人数", opened],
+      ["投票した人数", participants],
+      ["開いたが未投票", Math.max(0, opened - participants)],
+      ["初回投票までの潜時", lat]
+    ];
+  } else {
+    stats = [["開いた人数","—"],["投票した人数","—"],["開いたが未投票","—"],["初回投票までの潜時","—"]];
+  }
+  $("derived").innerHTML = stats.map(([k,v]) =>
+    '<div class="stat"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>').join("");
+
+  const box = $("logScroll");
+  if (!S.events.length){
+    box.innerHTML = '<div class="logempty">まだイベントはありません。左の画面を操作してください。</div>';
+    return;
+  }
+  const rows = S.events.map(e => {
+    const pl = Object.entries(e.payload).map(([k,v]) => k+"="+v).join(" ");
+    return '<tr'+(e.n===S.lastLogged?' class="new"':'')+'><td>'+stamp(e.ts)+'</td><td>'+esc(user(e.userId).name)+
+      '</td><td class="t">'+e.type+'</td><td class="pl">'+esc(pl)+'</td></tr>';
+  }).join("");
+  box.innerHTML = '<table class="log"><thead><tr><th>時刻</th><th>ユーザー</th><th>イベント</th><th>内容</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  box.scrollTop = box.scrollHeight;
+}
+function render(){ renderPhone(); renderPanel(); }
+
+/* ---------- actions ---------- */
+function openPoll(id){
+  S.activePollId = id; S.screen = "poll"; S.selection = undefined;
+  logEvent("poll_opened", id, {});
+  render();
+}
+function goList(){
+  if (S.screen === "poll" && S.activePollId) logEvent("page_hidden", S.activePollId, {});
+  S.screen = "list"; S.activePollId = null; S.selection = undefined; render();
+}
+
+document.addEventListener("click", ev => {
+  const seg = ev.target.closest("[data-user]");
+  if (seg){
+    if (S.screen === "poll" && S.activePollId) logEvent("page_hidden", S.activePollId, {});
+    S.currentUser = seg.dataset.user; S.selection = undefined;
+    if (S.screen === "poll" && S.activePollId) logEvent("poll_opened", S.activePollId, {});
+    if (S.screen === "create") { S.screen = "list"; S.draft = null; }
+    render(); return;
+  }
+  const md = ev.target.closest("[data-mode]");
+  if (md){ S.mode = md.dataset.mode; render(); return; }
+
+  const op = ev.target.closest("[data-open]");
+  if (op){ openPoll(op.dataset.open); return; }
+
+  const optEl = ev.target.closest("[data-opt]");
+  if (optEl && S.screen === "poll"){
+    const p = poll();
+    if (p.closedAt) return;
+    S.selection = optEl.dataset.opt;
+    logEvent("choice_focused", p.id, { opt:S.selection });
+    render(); return;
+  }
+
+  const tg = ev.target.closest("[data-tg]");
+  if (tg && S.screen === "create"){
+    ev.preventDefault();
+    S.draft[tg.dataset.tg] = !S.draft[tg.dataset.tg];
+    render(); return;
+  }
+
+  const btn = ev.target.closest("[data-act]");
+  if (!btn) return;
+  const p = poll();
+
+  switch (btn.dataset.act){
+    case "new":
+      S.draft = { title:"", options:["",""], closes:false, multi:false, anon:false, addopt:false };
+      S.screen = "create"; render();
+      setTimeout(() => { const q = $("qIn"); if (q) q.focus(); }, 30);
+      break;
+    case "cancel":
+      S.screen = "list"; S.draft = null; render(); break;
+    case "done": {
+      const d = S.draft;
+      const labels = d.options.map(o => o.trim()).filter(Boolean);
+      const np = {
+        id: "p" + (S.polls.length + 1),
+        title: d.title.trim(),
+        options: labels.map((l,i) => ({ id:"o"+(i+1), label:l })),
+        createdBy: S.currentUser, createdAt: new Date(),
+        multi:d.multi, anon:d.anon, addopt:d.addopt, closedAt:null
+      };
+      S.polls.unshift(np);
+      logEvent("poll_created", np.id, { options:labels.length, anon:d.anon?1:0 });
+      S.pending = { id:np.id, by:S.currentUser };
+      S.screen = "list"; S.draft = null; render();
+      break;
+    }
+    case "copyurl":
+      copy("[投票] " + S.polls.find(x => x.id === S.pending.id).title + "\n投票にご参加ください。\n" + urlOf(S.pending.id));
+      btn.textContent = "コピーしました";
+      setTimeout(() => { btn.textContent = "コピーする"; }, 1600);
+      break;
+    case "published":
+      logEvent("poll_published", S.pending.id, { note:"T0" });
+      S.pending = null; render(); break;
+    case "copypoll":
+      copy("[投票] " + p.title + "\n投票にご参加ください。\n" + urlOf(p.id));
+      btn.textContent = "コピー済";
+      setTimeout(() => { const b2 = document.querySelector('[data-act="copypoll"]'); if (b2) b2.textContent = "コピー"; }, 1600);
+      break;
+    case "home": goList(); break;
+    case "cast": {
+      const prev = countsOf(p).myVote;
+      if (prev) logEvent("vote_changed", p.id, { from:prev, to:S.selection });
+      else logEvent("vote_cast", p.id, { to:S.selection });
+      S.selection = undefined; render(); break;
+    }
+    case "askend": S.dialog = true; render(); break;
+    case "cancelend": S.dialog = false; render(); break;
+    case "end":
+      p.closedAt = new Date(); S.dialog = false;
+      logEvent("poll_closed", p.id, {}); render(); break;
+  }
+});
+
+document.addEventListener("input", ev => {
+  if (S.screen !== "create") return;
+  if (ev.target.id === "qIn"){ S.draft.title = ev.target.value; refreshDone(); return; }
+  if (ev.target.classList.contains("opt-in")){
+    const i = +ev.target.dataset.idx;
+    S.draft.options[i] = ev.target.value;
+    const last = S.draft.options[S.draft.options.length - 1];
+    if (last.trim() !== "" && S.draft.options.length < 10){
+      S.draft.options.push("");
+      const pos = ev.target.selectionStart;
+      render();
+      const again = document.querySelector('.opt-in[data-idx="'+i+'"]');
+      if (again){ again.focus(); again.setSelectionRange(pos,pos); }
+      return;
+    }
+    refreshDone();
+  }
+});
+function refreshDone(){
+  const d = S.draft;
+  const ok = d.title.trim() && d.options.filter(o => o.trim()).length >= 2;
+  const b = document.querySelector('[data-act="done"]');
+  if (b) b.disabled = !ok;
+}
+
+function copy(text){
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch(e){}
+}
+$("csvBtn").addEventListener("click", e => {
+  const head = "n,timestamp,user_id,user_name,type,poll_id,payload";
+  const body = S.events.map(x => [x.n, x.ts.toISOString(), x.userId, user(x.userId).name, x.type, x.pollId,
+    '"'+Object.entries(x.payload).map(([k,v]) => k+"="+v).join(" ")+'"'].join(",")).join("\n");
+  copy(head + "\n" + body);
+  e.target.textContent = "コピーしました";
+  setTimeout(() => { e.target.textContent = "CSVをコピー"; }, 1600);
+});
+$("resetBtn").addEventListener("click", () => {
+  S.screen = "list"; S.activePollId = null; S.polls = []; S.events = [];
+  S.seq = 0; S.dialog = false; S.draft = null; S.pending = null; S.selection = undefined;
+  S.currentUser = "U_admin"; render();
+});
+
+render();
+</script>
+
+</body>
+</html>

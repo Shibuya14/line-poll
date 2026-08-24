@@ -1,0 +1,35 @@
+{
+  // ⚠ このファイルは自動生成されます。編集するのは wrangler.jsonc.tmpl のほうです。
+  //    make config で terraform output の値を埋めて wrangler.jsonc を作ります。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "__WORKER_NAME__",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-01",
+  "account_id": "__ACCOUNT_ID__",
+
+  "observability": { "enabled": true },
+
+  // 静的ファイルとAPIを1つのWorkerで配信する。
+  // 同一オリジンになるので、セッションCookieの扱いが単純になる。
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*", "/p/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "__DB_NAME__",
+      "database_id": "__DB_ID__",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vars": {
+    // 公開してよい値だけをここに置く。
+    // チャネルシークレットとセッション鍵は wrangler secret put で入れる。
+    "LINE_CHANNEL_ID": "__LINE_CHANNEL_ID__"
+  }
+}
