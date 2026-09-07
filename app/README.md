@@ -46,6 +46,7 @@ infra/              Terraform。D1データベースの宣言
 migrations/         D1のスキーマ。連番で積み上げる
   0001_init.sql
   0002_log_extension.sql
+  0003_admin_role.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
 public/ogp4.jpg      LINEに貼ったときのリンクカード画像
