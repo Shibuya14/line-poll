@@ -70,17 +70,18 @@ docs/     ブラウザで開ける資料（ダブルクリック）
 │   /               public/index.html を返す（LINE風UIのSPA）       │
 │   /p/:id          同じHTMLを、その投票のタイトルでOGPだけ差し替え   │
 │   /api/polls*     投票の作成・一覧・投稿・投票・締切・CSV書き出し   │
-│   /api/events     poll_opened / choice_focused / page_hidden 等   │
+│   /api/events     choice_focused 等、クライアント発のイベント記録   │
+│   /api/sessions   アプリを開いてから閉じるまでの単位を作成・更新     │
 │   /auth/login     LINE認可画面へリダイレクト                       │
 │   /auth/callback  認可コード→userId交換、セッション発行            │
 │   それ以外         public/ の静的ファイル(assets binding)          │
 └───────────────────────────────┬────────────────────────────────┘
                                  ▼
-                    ┌─────────────────────┐
-                    │  D1 (SQLite)          │
-                    │  polls / events /      │
-                    │  participants           │
-                    └─────────────────────┘
+                    ┌─────────────────────────┐
+                    │  D1 (SQLite)               │
+                    │  users / polls /            │
+                    │  app_sessions / poll_events   │
+                    └─────────────────────────┘
 ```
 
 画面配信とAPIを同じWorkerの同じオリジンで返しているのがポイントです。オリジンが分かれるとCookieの扱い（SameSite等）が面倒になりますが、1つにまとめることでセッションCookieだけで完結しています。
@@ -89,22 +90,29 @@ docs/     ブラウザで開ける資料（ダブルクリック）
 
 1. `/auth/login` — `state`/`nonce`を生成し、10分だけ有効な署名付きCookie(`oauth_state`)に積んで、LINEの認可URLへ302リダイレクトする。オープンチャットのアプリ内ブラウザなら、ここが無操作で一瞬で通過する（実機で確認済み）
 2. `/auth/callback` — 認可コードをLINEのトークンエンドポイントに渡してIDトークンに交換し、**そのIDトークンをLINE側の検証エンドポイントに投げてuserIdを取り出す**。クライアントが自己申告してくるプロフィール情報は一切信用しない
-3. `userId`を60日有効の署名付きセッションCookie(`sid`)に積む。表示名・アイコンは受け取れても保存しない
+3. `userId`を60日有効の署名付きセッションCookie(`sid`)に積む。表示名・アイコンもログインのたびに`users`テーブルへ保存する（最新値で上書き）
 
 署名はHMAC-SHA256を自前実装（外部ライブラリなし）。改ざんされていないか・期限切れでないかをリクエストごとに検証する。
 
 ### データ設計: 集計テーブルを持たない
 
-`polls` / `events` / `participants` の3テーブルのみ。投票数や参加人数のような集計値はどこにも保存せず、**すべて `events` を読み直して数え直す**（`worker/index.js` の `tally()`）。
+`users` / `polls` / `app_sessions` / `poll_events` の4テーブル。役割を分けている：
 
-理由は、あとから分析の切り口を変えたくなっても、データを取り直さずに済むこと。`events`は追記オンリーで、記録される種別は次のとおり：
+- `users` — アカウント（LINEのuserId、表示名、アイコン、研究同意の状況）
+- `polls` — 募集そのもの（タイトル・選択肢など）
+- `app_sessions` — アプリを開いてから閉じるまでの単位。1セッション1行で、進行に応じて更新する（`polls`と同じ「状態を持つ行」）。30分以上操作が無ければ次の操作で新しいセッションとして扱う
+- `poll_events` — 募集・投票まわりの出来事。追記オンリーで、投票数や参加人数のような集計値はどこにも保存せず、**すべて読み直して数え直す**（`worker/index.js` の `tally()`）
+
+理由は、あとから分析の切り口を変えたくなっても、データを取り直さずに済むこと。`poll_events`に記録される種別は次のとおり：
 
 ```
-poll_created / poll_published(T0) / poll_opened / choice_focused /
-vote_cast / vote_changed / vote_withdrawn / page_hidden / poll_closed
+poll_created / poll_published(T0) / choice_focused /
+vote_cast / vote_changed / vote_withdrawn / poll_closed
 ```
 
-`server_ts`（サーバー受信時刻）を正としつつ、`client_ts`も一緒に残してクロックのズレを後から見られるようにしている。
+`server_ts`（サーバー受信時刻）を正としつつ、`client_ts`も一緒に残してクロックのズレを後から見られるようにしている。`client_event_id`（クライアント生成のUUID）で同じ操作の二重送信を検知し、`voter_count_at_action`にその行動の直前の投票者数、`session_id`にどの`app_sessions`中の出来事かを残す。
+
+どの画面で離脱したかは、`app_sessions.last_screen`（`list`/`create`/`poll`。画面が変わるたびに上書き）で分かる。セッション終了時点の値がそのまま離脱画面になる。
 
 ### 投票のライフサイクル
 

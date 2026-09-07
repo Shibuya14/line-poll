@@ -45,6 +45,7 @@ infra/              Terraform。D1データベースの宣言
   outputs.tf          他から使う値の出口
 migrations/         D1のスキーマ。連番で積み上げる
   0001_init.sql
+  0002_log_extension.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
 public/ogp4.jpg      LINEに貼ったときのリンクカード画像
@@ -75,7 +76,7 @@ make dev                          # http://localhost:8787
 make dev            # ローカルで起動
 make deploy         # 配備
 make tail           # 本番のログを流し見る
-make export-csv     # events を CSV に書き出す
+make export-csv     # poll_events を CSV に書き出す
 ```
 
 スキーマを変えたくなったら、`migrations/0002_xxx.sql` を追加して `make migrate` します。**既存のファイルは書き換えないでください。** 適用済みの履歴が壊れます。

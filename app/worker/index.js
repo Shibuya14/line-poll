@@ -186,10 +186,13 @@ async function callback(request, env, url) {
   const userId = claims.sub;   // ← これがLINEの userId。アカウント削除まで不変。
   const now = Date.now();
 
-  // 表示名とアイコンは受け取れるが保存しない（設計書5.7）。
+  // 表示名とアイコンはログインのたびに最新値で上書きする。
+  // first_seen_at は初回のみ書き込み、以降は更新しない。
   await env.DB.prepare(
-    "INSERT INTO participants (user_id, first_seen_at) VALUES (?, ?) ON CONFLICT(user_id) DO NOTHING"
-  ).bind(userId, now).run();
+    `INSERT INTO users (user_id, first_seen_at, display_name, picture_url)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET display_name = excluded.display_name, picture_url = excluded.picture_url`
+  ).bind(userId, now, claims.name || null, claims.picture || null).run();
 
   const sid = await issue(env.SESSION_SECRET, { uid: userId }, SESSION_TTL);
   return new Response(null, {
@@ -208,7 +211,7 @@ async function me(request, env) {
 }
 
 /**
- * イベントを1件記録する。
+ * イベントを1件記録する（クライアント発）。
  * ログインしていない場合も拒否せず、identified=0 で受け付ける。
  * 識別できた人だけを分析すると、測定対象と相関した欠測が生まれるため（設計書7章）。
  */
@@ -219,8 +222,10 @@ async function postEvent(request, env) {
 
   const userId = s ? s.uid : ("anon_" + (body.anon_id || "unknown"));
   await env.DB.prepare(
-    `INSERT INTO events (poll_id, user_id, identified, type, payload_json, server_ts, client_ts)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO poll_events
+       (poll_id, user_id, identified, type, payload_json, server_ts, client_ts, client_event_id, session_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING`
   ).bind(
     body.poll_id || null,
     userId,
@@ -228,7 +233,9 @@ async function postEvent(request, env) {
     body.type,
     JSON.stringify(body.payload || {}),
     Date.now(),                                   // ← サーバー受信時刻を正とする
-    Number.isFinite(body.client_ts) ? body.client_ts : null
+    Number.isFinite(body.client_ts) ? body.client_ts : null,
+    body.client_event_id || null,
+    Number.isFinite(body.session_id) ? body.session_id : null
   ).run();
 
   return json({ ok: true });
@@ -237,10 +244,74 @@ async function postEvent(request, env) {
 async function listEvents(request, env, url) {
   const pollId = url.searchParams.get("poll_id");
   const q = pollId
-    ? env.DB.prepare("SELECT * FROM events WHERE poll_id = ? ORDER BY id DESC LIMIT 200").bind(pollId)
-    : env.DB.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 200");
+    ? env.DB.prepare("SELECT * FROM poll_events WHERE poll_id = ? ORDER BY id DESC LIMIT 200").bind(pollId)
+    : env.DB.prepare("SELECT * FROM poll_events ORDER BY id DESC LIMIT 200");
   const r = await q.all();
   return json({ count: r.results.length, events: r.results });
+}
+
+/**
+ * app_sessions の作成・更新・終了。
+ * kind: "ping"（開始 or 継続の合図。30分以上空いていれば新しいセッションを作る）
+ *       "end"（明示的な終了シグナル）
+ */
+async function postSession(request, env) {
+  const s = await session(request, env);
+  const body = await request.json().catch(() => ({}));
+  const userId = s ? s.uid : ("anon_" + (body.anon_id || "unknown"));
+  const now = Date.now();
+  const SESSION_GAP_MS = 30 * 60 * 1000;
+
+  if (body.kind === "end") {
+    const id = Number(body.session_id);
+    if (Number.isFinite(id)) {
+      await env.DB.prepare(
+        "UPDATE app_sessions SET ended_at = ? WHERE id = ? AND ended_at IS NULL"
+      ).bind(now, id).run();
+    }
+    return json({ ok: true });
+  }
+
+  // kind === "ping"（既定）
+  const screen = ["list", "create", "poll"].includes(body.screen) ? body.screen : null;
+  const existingId = Number.isFinite(Number(body.session_id)) ? Number(body.session_id) : null;
+
+  let row = existingId
+    ? await env.DB.prepare("SELECT id, last_activity_at, ended_at FROM app_sessions WHERE id = ?").bind(existingId).first()
+    : null;
+
+  const stale = !row || row.ended_at !== null || (now - row.last_activity_at) > SESSION_GAP_MS;
+
+  if (!stale) {
+    await env.DB.prepare(
+      "UPDATE app_sessions SET last_activity_at = ?, last_screen = COALESCE(?, last_screen) WHERE id = ?"
+    ).bind(now, screen, existingId).run();
+    return json({ ok: true, session_id: existingId });
+  }
+
+  // 前のセッションが終了シグナルを受け取れないまま止まっていた場合、
+  // 最後に分かっている活動時刻をもって終了とみなす（サーバー側の後始末）。
+  if (row && row.ended_at === null) {
+    await env.DB.prepare(
+      "UPDATE app_sessions SET ended_at = ? WHERE id = ?"
+    ).bind(row.last_activity_at, existingId).run();
+  }
+
+  const ins = await env.DB.prepare(
+    `INSERT INTO app_sessions (user_id, identified, poll_id, started_at, client_started_ts, last_activity_at, last_screen, os)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    userId,
+    s ? 1 : 0,
+    body.poll_id || null,
+    now,
+    Number.isFinite(body.client_ts) ? body.client_ts : null,
+    now,
+    screen,
+    body.os || null
+  ).run();
+
+  return json({ ok: true, session_id: ins.meta.last_row_id });
 }
 
 
@@ -248,12 +319,30 @@ async function listEvents(request, env, url) {
 
 const nowMs = () => Date.now();
 
-/** イベントを1件書く（サーバー起点） */
-async function record(env, pollId, userId, type, payload) {
+/** リクエストボディから record() に渡す共通オプションだけ取り出す */
+const evtOpts = b => ({
+  clientEventId: b.client_event_id || null,
+  sessionId: Number.isFinite(b.session_id) ? b.session_id : null
+});
+
+/**
+ * イベントを1件書く（サーバー起点。API呼び出しの結果として記録するもの）。
+ * opts.sessionId    — このイベントが起きたapp_sessions.id（無ければnull）
+ * opts.clientEventId — クライアント生成の重複排除キー（無ければnull）
+ * opts.voterCount   — vote_cast/vote_changed/vote_withdrawn の直前の投票者数（無ければnull）
+ */
+async function record(env, pollId, userId, type, payload, opts = {}) {
   await env.DB.prepare(
-    `INSERT INTO events (poll_id, user_id, identified, type, payload_json, server_ts)
-     VALUES (?, ?, 1, ?, ?, ?)`
-  ).bind(pollId, userId, type, JSON.stringify(payload || {}), nowMs()).run();
+    `INSERT INTO poll_events
+       (poll_id, user_id, identified, type, payload_json, server_ts, client_event_id, voter_count_at_action, session_id)
+     VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING`
+  ).bind(
+    pollId, userId, type, JSON.stringify(payload || {}), nowMs(),
+    opts.clientEventId || null,
+    Number.isFinite(opts.voterCount) ? opts.voterCount : null,
+    Number.isFinite(opts.sessionId) ? opts.sessionId : null
+  ).run();
 }
 
 async function loadPoll(env, id) {
@@ -269,7 +358,7 @@ async function loadPoll(env, id) {
  */
 async function tally(env, pollId) {
   const r = await env.DB.prepare(
-    "SELECT user_id, type, payload_json FROM events WHERE poll_id = ? AND type IN ('vote_cast','vote_changed','vote_withdrawn') ORDER BY id"
+    "SELECT user_id, type, payload_json FROM poll_events WHERE poll_id = ? AND type IN ('vote_cast','vote_changed','vote_withdrawn') ORDER BY id"
   ).bind(pollId).all();
 
   const m = new Map();
@@ -349,18 +438,19 @@ async function createPoll(request, env, uid) {
     b.multi_select ? 1 : 0, b.anonymous ? 1 : 0, b.allow_add_option ? 1 : 0, progress
   ).run();
 
-  await record(env, id, uid, "poll_created", { options: options.length, show_progress: progress });
+  await record(env, id, uid, "poll_created", { options: options.length, show_progress: progress }, evtOpts(b));
   const poll = await loadPoll(env, id);
   return json({ poll: shape(poll, new Map(), uid) }, 201);
 }
 
 /** T0 の記録。作成者がグループに投稿した瞬間を押さえる（設計書5.5）。 */
-async function publishPoll(env, poll, uid) {
+async function publishPoll(request, env, poll, uid) {
   if (poll.created_by !== uid) return json({ error: "作成者のみ実行できます" }, 403);
   if (poll.published_at)       return json({ error: "すでに投稿済みです" }, 409);
+  const b = await request.json().catch(() => ({}));
   const ts = nowMs();
   await env.DB.prepare("UPDATE polls SET published_at = ? WHERE id = ?").bind(ts, poll.id).run();
-  await record(env, poll.id, uid, "poll_published", { note: "T0" });
+  await record(env, poll.id, uid, "poll_published", { note: "T0" }, evtOpts(b));
   return json({ ok: true, published_at: ts });
 }
 
@@ -381,26 +471,32 @@ async function castVote(request, env, poll, uid) {
 
   if (same) return json({ ok: true, unchanged: true, poll: shape(poll, votes, uid) });
 
-  if (prev) await record(env, poll.id, uid, "vote_changed", { from: prev, to: picked });
-  else      await record(env, poll.id, uid, "vote_cast",    { to: picked });
+  // 本人のこの行動が反映される直前の投票者数（本人を含まない）。
+  const voterCount = votes.size - (prev ? 1 : 0);
+  const opts = { ...evtOpts(b), voterCount };
+  if (prev) await record(env, poll.id, uid, "vote_changed", { from: prev, to: picked }, opts);
+  else      await record(env, poll.id, uid, "vote_cast",    { to: picked }, opts);
 
   return json({ ok: true, poll: shape(poll, await tally(env, poll.id), uid) });
 }
 
-async function withdrawVote(env, poll, uid) {
+async function withdrawVote(request, env, poll, uid) {
   if (poll.closed_at) return json({ error: "この投票は終了しています" }, 409);
+  const b = await request.json().catch(() => ({}));
   const votes = await tally(env, poll.id);
   if (!votes.has(uid)) return json({ error: "まだ投票していません" }, 400);
-  await record(env, poll.id, uid, "vote_withdrawn", { from: votes.get(uid) });
+  // 取り消す直前の投票者数（本人を含まない。他の定義と揃える）。
+  await record(env, poll.id, uid, "vote_withdrawn", { from: votes.get(uid) }, { ...evtOpts(b), voterCount: votes.size - 1 });
   return json({ ok: true, poll: shape(poll, await tally(env, poll.id), uid) });
 }
 
-async function closePoll(env, poll, uid) {
+async function closePoll(request, env, poll, uid) {
   if (poll.created_by !== uid) return json({ error: "作成者のみ終了できます" }, 403);
   if (poll.closed_at)          return json({ error: "すでに終了しています" }, 409);
+  const b = await request.json().catch(() => ({}));
   const ts = nowMs();
   await env.DB.prepare("UPDATE polls SET closed_at = ? WHERE id = ?").bind(ts, poll.id).run();
-  await record(env, poll.id, uid, "poll_closed", {});
+  await record(env, poll.id, uid, "poll_closed", {}, evtOpts(b));
   const fresh = await loadPoll(env, poll.id);
   return json({ ok: true, poll: shape(fresh, await tally(env, poll.id), uid) });
 }
@@ -410,11 +506,13 @@ async function exportCsv(env, poll, uid) {
   if (poll.created_by !== uid) return new Response("作成者のみ取得できます", { status: 403 });
 
   const r = await env.DB.prepare(
-    "SELECT id, poll_id, user_id, identified, type, payload_json, server_ts, client_ts FROM events WHERE poll_id = ? ORDER BY id"
+    `SELECT id, poll_id, user_id, identified, type, payload_json, server_ts, client_ts,
+            client_event_id, voter_count_at_action, session_id
+     FROM poll_events WHERE poll_id = ? ORDER BY id`
   ).bind(poll.id).all();
 
   const t0 = poll.published_at;
-  const head = "id,poll_id,user_id,identified,type,payload,server_ts,server_iso,client_ts,ms_since_t0";
+  const head = "id,poll_id,user_id,identified,type,payload,server_ts,server_iso,client_ts,ms_since_t0,client_event_id,voter_count_at_action,session_id";
   const esc = v => {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -422,7 +520,8 @@ async function exportCsv(env, poll, uid) {
   const rows = r.results.map(e => [
     e.id, e.poll_id, e.user_id, e.identified, e.type, e.payload_json,
     e.server_ts, new Date(e.server_ts).toISOString(), e.client_ts,
-    t0 ? e.server_ts - t0 : ""
+    t0 ? e.server_ts - t0 : "",
+    e.client_event_id, e.voter_count_at_action, e.session_id
   ].map(esc).join(","));
 
   return new Response([head, ...rows].join("\n"), {
@@ -453,11 +552,11 @@ async function pollsRouter(request, env, url, path) {
 
   switch (action) {
     case "":            return json({ poll: shape(poll, await tally(env, poll.id), uid) });
-    case "/publish":    return publishPoll(env, poll, uid);
+    case "/publish":    return publishPoll(request, env, poll, uid);
     case "/vote":       return request.method === "DELETE"
-                               ? withdrawVote(env, poll, uid)
+                               ? withdrawVote(request, env, poll, uid)
                                : castVote(request, env, poll, uid);
-    case "/close":      return closePoll(env, poll, uid);
+    case "/close":      return closePoll(request, env, poll, uid);
     case "/export.csv": return exportCsv(env, poll, uid);
     default:            return json({ error: "見つかりません" }, 404);
   }
@@ -515,6 +614,7 @@ export default {
           ? await postEvent(request, env)
           : await listEvents(request, env, url);
       }
+      if (path === "/api/sessions" && request.method === "POST") return await postSession(request, env);
       if (path.startsWith("/api/polls")) return await pollsRouter(request, env, url, path);
       if (path === "/auth/logout") {
         return new Response(null, { status: 302, headers: { location: "/", "set-cookie": setCookie(SESSION_COOKIE, "", 0) } });
