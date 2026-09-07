@@ -116,7 +116,12 @@ vote_cast / vote_changed / vote_withdrawn / poll_closed
 
 ### 管理者(role)
 
-`users.role`は`user`（既定・全員）か`admin`（開発者用）。adminでログインすると、投票一覧画面の右上に設定アイコンが出て、setting画面から4テーブル（`users`/`polls`/`app_sessions`/`poll_events`）の中身の閲覧・CSVダウンロード・他ユーザーのrole変更ができる（`/api/admin/*`、サーバー側で毎回roleを再検証）。最初の1人だけはsettingページを開ける人がまだいないため、DBに直接書き込んで用意する必要がある。
+`users.role`は`user`（既定・全員）か`admin`（開発者用）。adminでログインすると、投票一覧画面の右上に設定アイコンが出る。setting画面は2タブ構成：
+
+- 「ユーザー管理」— 名前とroleだけの一覧。ここから他ユーザーのroleも変更できる
+- 「DB」— テーブル選択のプルダウン（`users`/`polls`/`app_sessions`/`poll_events`）＋中身の表示＋CSVダウンロード
+
+サーバー側は`/api/admin/*`へのリクエストのたびにroleを再検証するので、一般ユーザーが直接叩いても弾かれる。最初の1人だけはsettingページを開ける人がまだいないため、DBに直接書き込んで用意する必要がある。設定アイコンとダウンロードアイコンはどちらも支給されたSVG（`fill="currentColor"`で埋め込み、ボタンの文字色に合わせて色が変わる）。
 
 どの画面で離脱したかは、`app_sessions.last_screen`（`list`/`create`/`poll`。画面が変わるたびに上書き）で分かる。セッション終了時点の値がそのまま離脱画面になる。
 
