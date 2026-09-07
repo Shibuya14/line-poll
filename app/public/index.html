@@ -198,12 +198,65 @@ async function api(path, opts){
   return body;
 }
 
+/** サーバーの record()/postEvent() に渡す共通フィールドをbodyに足したJSON文字列を作る */
+function withEventMeta(body){
+  return JSON.stringify(Object.assign({}, body, {
+    client_event_id: crypto.randomUUID(),
+    session_id: CUR_SESSION_ID
+  }));
+}
+
 /** 見ている・離れたなどの観測イベント。失敗しても画面には影響させない。 */
 function beacon(type, pollId, payload){
   fetch("/api/events", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ type, poll_id: pollId || null, payload: payload || {}, client_ts: Date.now() }),
+    body: withEventMeta({ type, poll_id: pollId || null, payload: payload || {}, client_ts: Date.now() }),
+    keepalive: true
+  }).catch(() => {});
+}
+
+/* ===================== セッション（アプリを開いてから閉じるまで） ===================== */
+// 30分以上操作が無ければ、次の操作で新しいセッションとして扱う（判定はサーバー側）。
+const SESS_STORE_KEY = "poll_app_session";
+let CUR_SESSION_ID = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESS_STORE_KEY) || "null");
+    return v && Number.isFinite(v.id) ? v.id : null;
+  } catch(e){ return null; }
+})();
+
+function detectOS(){
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+  if (/Android/i.test(ua))          return "Android";
+  return "other";
+}
+
+/** 画面に入った合図。新しいセッションが要れば作られ、CUR_SESSION_IDを更新する。 */
+async function sessionPing(screen){
+  try {
+    const r = await api("/api/sessions", { method: "POST", body: JSON.stringify({
+      session_id: CUR_SESSION_ID,
+      screen,
+      poll_id: S.activePollId || null,
+      os: detectOS(),
+      client_ts: Date.now()
+    })});
+    if (r && Number.isFinite(r.session_id)) {
+      CUR_SESSION_ID = r.session_id;
+      localStorage.setItem(SESS_STORE_KEY, JSON.stringify({ id: CUR_SESSION_ID }));
+    }
+  } catch(e){ /* 失敗しても画面には影響させない */ }
+}
+
+/** タブを閉じる・隠すなどの明示的な終了シグナル。keepaliveでページ遷移後も送り切る。 */
+function sessionEnd(){
+  if (!Number.isFinite(CUR_SESSION_ID)) return;
+  fetch("/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "end", session_id: CUR_SESSION_ID, client_ts: Date.now() }),
     keepalive: true
   }).catch(() => {});
 }
@@ -230,19 +283,19 @@ async function route(){
   const id = currentPollIdFromPath();
   if (id) {
     S.screen = "loading"; render();
-    if (S.activePollId && S.activePollId !== id) beacon("page_hidden", S.activePollId);
     S.activePollId = id; S.selection = undefined;
     try {
       const r = await api("/api/polls/" + id);
       S.activePoll = r.poll; S.screen = "poll";
-      beacon("poll_opened", id);
+      sessionPing("poll");
     } catch(e){
       S.screen = "error"; S.errorMsg = e.message || "投票が見つかりません";
     }
     render();
   } else {
-    if (S.activePollId) { beacon("page_hidden", S.activePollId); S.activePollId = null; S.activePoll = null; }
+    S.activePollId = null; S.activePoll = null;
     S.screen = "list"; render();
+    sessionPing("list");
     await loadList();
   }
 }
@@ -412,22 +465,26 @@ document.addEventListener("click", async ev => {
     case "new":
       S.draft = { title:"", options:["",""], multi:false, anon:false, addopt:false };
       S.screen = "create"; render();
+      sessionPing("create");
       setTimeout(() => { const q = document.getElementById("qIn"); if (q) q.focus(); }, 30);
       break;
 
     case "cancel":
-      S.screen = "list"; S.draft = null; render(); break;
+      S.screen = "list"; S.draft = null; render();
+      sessionPing("list");
+      break;
 
     case "done": {
       const d = S.draft;
       btn.disabled = true;
       try {
-        const r = await api("/api/polls", { method:"POST", body: JSON.stringify({
+        const r = await api("/api/polls", { method:"POST", body: withEventMeta({
           title: d.title, options: d.options,
           multi_select: d.multi, anonymous: d.anon, allow_add_option: d.addopt
         })});
         S.screen = "list"; S.draft = null;
         await loadList();
+        sessionPing("list");
         toast("投票を作成しました");
       } catch(e){
         toast(e.message || "作成に失敗しました");
@@ -448,7 +505,7 @@ document.addEventListener("click", async ev => {
 
     case "published": {
       const id = btn.dataset.id;
-      try { await api("/api/polls/" + id + "/publish", { method:"POST" }); await loadList(); toast("投稿済みにしました"); }
+      try { await api("/api/polls/" + id + "/publish", { method:"POST", body: withEventMeta({}) }); await loadList(); toast("投稿済みにしました"); }
       catch(e){ toast(e.message); }
       break;
     }
@@ -459,7 +516,7 @@ document.addEventListener("click", async ev => {
       btn.disabled = true;
       try {
         const r = await api("/api/polls/" + S.activePoll.id + "/vote", {
-          method:"POST", body: JSON.stringify({ options: [S.selection] })
+          method:"POST", body: withEventMeta({ options: [S.selection] })
         });
         S.activePoll = r.poll; S.selection = undefined; render();
         toast("投票しました");
@@ -471,7 +528,7 @@ document.addEventListener("click", async ev => {
     case "cancelend": S.dialog = false; render(); break;
     case "end": {
       try {
-        const r = await api("/api/polls/" + S.activePoll.id + "/close", { method:"POST" });
+        const r = await api("/api/polls/" + S.activePoll.id + "/close", { method:"POST", body: withEventMeta({}) });
         S.activePoll = r.poll; S.dialog = false; render();
         toast("投票を終了しました");
       } catch(e){ toast(e.message); S.dialog = false; render(); }
@@ -506,7 +563,7 @@ function refreshDone(){
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden" && S.activePollId) beacon("page_hidden", S.activePollId);
+  if (document.visibilityState === "hidden") sessionEnd();
 });
 
 /* ===================== 起動 ===================== */
