@@ -125,12 +125,6 @@
   .modal p{ margin:0 0 22px; font-size:15.5px; color:#111; font-weight:500; }
   .modal .row{ display:flex; gap:11px; }
 
-  .banner{ background:#FFF7E6; border:1px solid #F0DFB8; border-radius:8px; padding:12px 14px; margin:16px 0 4px; display:flex; flex-direction:column; gap:9px; }
-  .banner p{ margin:0; font-size:13px; color:#7A5B12; line-height:1.6; }
-  .banner .row{ display:flex; gap:8px; }
-  .banner button{ flex:1; font-size:13px; padding:9px 8px; border-radius:6px; border:1px solid #E2CE9E; background:#fff; color:#7A5B12; font-weight:700; cursor:pointer; font-family:inherit; }
-  .banner button.solid{ background:#06C755; border-color:#06C755; color:#fff; }
-
   .admin-tabs{ grid-template-columns:repeat(4,1fr); margin-top:4px; }
   .admin-tabs div{ font-size:11px; padding:10px 2px; word-break:break-all; }
   .csv-link{ display:inline-block; background:#F2F2F2; color:#3C3C3C; border-radius:6px; padding:10px 16px; font-size:13.5px; font-weight:700; text-decoration:none; font-family:inherit; }
@@ -348,12 +342,6 @@ function renderList(){
       '<p>投票を作成しましょう!</p><button class="btn-create" data-act="new">投票を作成</button></div></div>';
   } else {
     let inner = "";
-    const pending = S.polls.find(p => p.is_owner && !p.published_at && !p.closed);
-    if (pending){
-      inner += '<div class="banner"><p>この投票はまだグループに投稿されていません。自動送信はできないため、URLをコピーしてオープンチャットに貼り付けてください。</p>'+
-        '<div class="row"><button data-act="copyurl" data-id="'+pending.id+'">コピーする</button>'+
-        '<button class="solid" data-act="published" data-id="'+pending.id+'">投稿しました</button></div></div>';
-    }
     if (open.length){ inner += '<div class="sect-label">進行中</div>' + open.map(pollRow).join(""); }
     if (done.length){ inner += '<div class="sect-label">終了</div>' + done.map(pollRow).join(""); }
     body = '<div class="ph-body">'+inner+'</div><button class="fab" data-act="new" aria-label="投票を作成">+</button>';
@@ -430,7 +418,6 @@ function renderPoll(){
     const canPress = p.my_vote ? changed : !!sel;
     foot = urlbar + '<div class="ph-foot">'+
       (p.is_owner ? '<button class="ln-btn grey" data-act="askend">投票を終了</button>' : '')+
-      (!p.published_at && p.is_owner ? '' : '')+
       '<button class="ln-btn green" data-act="cast"'+(canPress?"":" disabled")+'>'+label+'</button></div>';
   }
   if (S.dialog){
@@ -564,20 +551,20 @@ document.addEventListener("click", async ev => {
       break;
     }
 
-    case "copyurl": case "copypoll": {
-      const id = btn.dataset.id || (S.activePoll && S.activePoll.id);
-      const p = S.polls.find(x => x.id === id) || S.activePoll;
-      const ok = copy("[投票] " + (p ? p.title : "") + "\n投票にご参加ください。\n" + urlOf(id));
-      const restoreLabel = btn.dataset.act === "copypoll" ? "コピー" : "コピーする";
+    case "copypoll": {
+      const p = S.activePoll;
+      const ok = copy("[投票] " + (p ? p.title : "") + "\n投票にご参加ください。\n" + urlOf(p.id));
       btn.textContent = ok ? "コピーしました" : "コピーできません";
-      setTimeout(() => { btn.textContent = restoreLabel; }, 1600);
-      break;
-    }
+      setTimeout(() => { btn.textContent = "コピー"; }, 1600);
 
-    case "published": {
-      const id = btn.dataset.id;
-      try { await api("/api/polls/" + id + "/publish", { method:"POST", body: withEventMeta({}) }); await loadList(); toast("投稿済みにしました"); }
-      catch(e){ toast(e.message); }
+      // グループに貼る直前の操作＝これをT0とする（設計書5.5）。バナーや
+      // 「投稿しました」の手動確認は無くし、コピーした瞬間に自動で記録する。
+      if (p && p.is_owner && !p.published_at && !p.closed){
+        try {
+          const r = await api("/api/polls/" + p.id + "/publish", { method:"POST", body: withEventMeta({}) });
+          S.activePoll = Object.assign({}, p, { published_at: r.published_at });
+        } catch(e){ /* コピー自体は成功しているので、失敗しても画面は壊さない */ }
+      }
       break;
     }
 
