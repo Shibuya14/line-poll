@@ -131,6 +131,18 @@
   .banner button{ flex:1; font-size:13px; padding:9px 8px; border-radius:6px; border:1px solid #E2CE9E; background:#fff; color:#7A5B12; font-weight:700; cursor:pointer; font-family:inherit; }
   .banner button.solid{ background:#06C755; border-color:#06C755; color:#fff; }
 
+  .admin-tabs{ grid-template-columns:repeat(4,1fr); margin-top:4px; }
+  .admin-tabs div{ font-size:11px; padding:10px 2px; word-break:break-all; }
+  .csv-link{ display:inline-block; background:#F2F2F2; color:#3C3C3C; border-radius:6px; padding:10px 16px; font-size:13.5px; font-weight:700; text-decoration:none; font-family:inherit; }
+  .csv-link:active{ background:#E8E8E8; }
+  .admin-table-wrap{ overflow-x:auto; margin-top:10px; -webkit-overflow-scrolling:touch; border:1px solid #F0F0F0; border-radius:8px; }
+  .admin-table{ border-collapse:collapse; width:100%; font-size:12px; font-family:"JetBrains Mono",ui-monospace,monospace; }
+  .admin-table th, .admin-table td{ border-bottom:1px solid #F0F0F0; padding:7px 10px; white-space:nowrap; text-align:left; }
+  .admin-table th{ background:#FAFAFA; color:#555; font-weight:700; position:sticky; top:0; }
+  .admin-table tr:last-child td{ border-bottom:none; }
+  .admin-role-btn{ border:1px solid #DEDEDE; background:#fff; color:#111; border-radius:6px; padding:5px 10px; font-size:11.5px; cursor:pointer; font-family:inherit; }
+  .admin-role-btn:active{ border-color:#06C755; color:#06C755; }
+
   .toast{
     position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 90px); transform:translateX(-50%);
     background:rgba(20,20,20,.92); color:#fff; padding:10px 18px; border-radius:999px; font-size:13.5px;
@@ -151,15 +163,17 @@
 
 /* ===================== 状態 ===================== */
 const S = {
-  me: null,          // { authenticated, user_id }
-  screen: "loading",  // loading | list | create | poll | error
+  me: null,          // { authenticated, user_id, role }
+  screen: "loading",  // loading | list | create | poll | settings | error
   polls: [],
   activePoll: null,   // shape() の結果
   activePollId: null,
   selection: undefined,
   draft: null,
   dialog: false,
-  errorMsg: ""
+  errorMsg: "",
+  adminTable: "users",  // settingページで選択中のテーブル
+  adminRows: []
 };
 
 const $app = document.getElementById("app");
@@ -265,6 +279,7 @@ function sessionEnd(){
 const icHome = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>';
 const icBack = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 const icCheck= '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
+const icGear = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5c.04-.5.04-1 0-1.5l1.9-1.5-2-3.4-2.2.9c-.4-.3-.8-.6-1.3-.8L15.4 5h-4l-.4 2.2c-.5.2-.9.5-1.3.8l-2.2-.9-2 3.4L7.4 12c-.04.5-.04 1 0 1.5l-1.9 1.5 2 3.4 2.2-.9c.4.3.8.6 1.3.8l.4 2.2h4l.4-2.2c.5-.2.9-.5 1.3-.8l2.2.9 2-3.4-1.9-1.5Z"/></svg>';
 const artBox = '<svg class="box" viewBox="0 0 120 120" fill="none" stroke="#DCDCDC" stroke-width="2.6" stroke-linejoin="round"><path d="M22 52h76v46H22z"/><path d="M22 52 34 32h52l12 20"/><path d="M60 32v20"/><path d="M46 68h28" stroke-linecap="round"/><path d="M52 74l6 6 12-14" stroke="#CFCFCF" stroke-linecap="round"/></svg>';
 
 /* ===================== ルーティング ===================== */
@@ -322,7 +337,11 @@ function pollRow(p){
 function renderList(){
   const open = S.polls.filter(p => !p.closed);
   const done = S.polls.filter(p => p.closed);
-  const head = '<div class="ph-head"><span></span><div class="ttl">投票</div><span></span></div>';
+  const isAdmin = S.me && S.me.role === "admin";
+  const gearBtn = isAdmin
+    ? '<button class="ic" data-act="settings" aria-label="設定">'+icGear+'</button>'
+    : '<span></span>';
+  const head = '<div class="ph-head"><span></span><div class="ttl">投票</div>'+gearBtn+'</div>';
   let body;
   if (!S.polls.length){
     body = '<div class="ph-body"><div class="empty">'+artBox+
@@ -431,12 +450,64 @@ function renderError(){
     '<div class="ph-body"><div class="err">'+esc(S.errorMsg)+'</div></div>';
 }
 
+const ADMIN_TABLES = ["users", "polls", "app_sessions", "poll_events"];
+
+/** settingページ: テーブルの中身を取得してS.adminRowsへ。admin以外は呼ばれない想定。 */
+async function loadAdminTable(table){
+  try {
+    const r = await api("/api/admin/tables/" + table);
+    S.adminRows = r.rows;
+  } catch(e){
+    S.adminRows = [];
+    toast(e.message || "取得に失敗しました");
+  }
+  render();
+}
+
+function renderSettings(){
+  const table = S.adminTable;
+  const rows = S.adminRows;
+  const tabs = ADMIN_TABLES.map(t =>
+    '<div class="'+(t===table?"on":"")+'" data-act="admintab" data-table="'+t+'">'+t+'</div>'
+  ).join("");
+
+  const head = '<div class="ph-head"><button class="ic" data-act="home" aria-label="一覧へ">'+icHome+'</button><div class="ttl">設定</div><span></span></div>';
+
+  let tableHtml;
+  if (!rows.length){
+    tableHtml = '<p style="color:#8E8E8E;font-size:13.5px;padding:20px 0;">データがありません</p>';
+  } else {
+    const cols = Object.keys(rows[0]);
+    const thead = '<tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join("")+(table==="users"?'<th>role操作</th>':'')+'</tr>';
+    const tbody = rows.map(row => {
+      const cells = cols.map(c => '<td>'+esc(row[c] === null || row[c] === undefined ? "" : row[c])+'</td>').join("");
+      let actionCell = "";
+      if (table === "users"){
+        const nextRole = row.role === "admin" ? "user" : "admin";
+        const label = row.role === "admin" ? "adminを外す" : "adminにする";
+        actionCell = '<td><button class="admin-role-btn" data-act="adminrole" data-uid="'+esc(row.user_id)+'" data-role="'+nextRole+'">'+label+'</button></td>';
+      }
+      return '<tr>'+cells+actionCell+'</tr>';
+    }).join("");
+    tableHtml = '<div class="admin-table-wrap"><table class="admin-table"><thead>'+thead+'</thead><tbody>'+tbody+'</tbody></table></div>';
+  }
+
+  const body = '<div class="ph-body">'+
+    '<div class="cr-tabs admin-tabs">'+tabs+'</div>'+
+    '<div style="margin:14px 0;"><a class="csv-link" href="/api/admin/tables/'+table+'?format=csv">CSVダウンロード（'+table+'）</a></div>'+
+    tableHtml+
+    '</div>';
+
+  $app.innerHTML = head + body;
+}
+
 function render(){
-  if (S.screen === "loading") return renderLoading();
-  if (S.screen === "error")   return renderError();
-  if (S.screen === "list")    return renderList();
-  if (S.screen === "create")  return renderCreate();
-  if (S.screen === "poll")    return renderPoll();
+  if (S.screen === "loading")  return renderLoading();
+  if (S.screen === "error")    return renderError();
+  if (S.screen === "list")     return renderList();
+  if (S.screen === "create")   return renderCreate();
+  if (S.screen === "poll")     return renderPoll();
+  if (S.screen === "settings") return renderSettings();
 }
 
 /* ===================== 操作 ===================== */
@@ -520,6 +591,32 @@ document.addEventListener("click", async ev => {
         });
         S.activePoll = r.poll; S.selection = undefined; render();
         toast("投票しました");
+      } catch(e){ toast(e.message); btn.disabled = false; }
+      break;
+    }
+
+    case "settings": {
+      if (!S.me || S.me.role !== "admin") break;
+      S.screen = "settings"; render();
+      await loadAdminTable(S.adminTable);
+      break;
+    }
+
+    case "admintab": {
+      S.adminTable = btn.dataset.table; render();
+      await loadAdminTable(S.adminTable);
+      break;
+    }
+
+    case "adminrole": {
+      const uid = btn.dataset.uid, role = btn.dataset.role;
+      btn.disabled = true;
+      try {
+        await api("/api/admin/users/" + encodeURIComponent(uid) + "/role", {
+          method: "POST", body: JSON.stringify({ role })
+        });
+        await loadAdminTable("users");
+        toast("roleを更新しました");
       } catch(e){ toast(e.message); btn.disabled = false; }
       break;
     }

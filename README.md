@@ -98,7 +98,7 @@ docs/     ブラウザで開ける資料（ダブルクリック）
 
 `users` / `polls` / `app_sessions` / `poll_events` の4テーブル。役割を分けている：
 
-- `users` — アカウント（LINEのuserId、表示名、アイコン、研究同意の状況）
+- `users` — アカウント（LINEのuserId、表示名、アイコン、研究同意の状況、role）
 - `polls` — 募集そのもの（タイトル・選択肢など）
 - `app_sessions` — アプリを開いてから閉じるまでの単位。1セッション1行で、進行に応じて更新する（`polls`と同じ「状態を持つ行」）。30分以上操作が無ければ次の操作で新しいセッションとして扱う
 - `poll_events` — 募集・投票まわりの出来事。追記オンリーで、投票数や参加人数のような集計値はどこにも保存せず、**すべて読み直して数え直す**（`worker/index.js` の `tally()`）
@@ -111,6 +111,12 @@ vote_cast / vote_changed / vote_withdrawn / poll_closed
 ```
 
 `server_ts`（サーバー受信時刻）を正としつつ、`client_ts`も一緒に残してクロックのズレを後から見られるようにしている。`client_event_id`（クライアント生成のUUID）で同じ操作の二重送信を検知し、`voter_count_at_action`にその行動の直前の投票者数、`session_id`にどの`app_sessions`中の出来事かを残す。
+
+`app_sessions.poll_id`は画面遷移のたびに最新の値へ上書きされる（投票詳細ページ以外にいる間はnull）。そのため`last_screen = 'poll'`かつ`poll_id`が入っている状態でセッションが終わっていれば、「どの投票の詳細ページで離脱したか」まで特定できる。逆に、その投票に対する行動（投票やchoice_focusedなど）が一度もなければ、`poll_events`側からは辿れない。
+
+### 管理者(role)
+
+`users.role`は`user`（既定・全員）か`admin`（開発者用）。adminでログインすると、投票一覧画面の右上に設定アイコンが出て、setting画面から4テーブル（`users`/`polls`/`app_sessions`/`poll_events`）の中身の閲覧・CSVダウンロード・他ユーザーのrole変更ができる（`/api/admin/*`、サーバー側で毎回roleを再検証）。最初の1人だけはsettingページを開ける人がまだいないため、DBに直接書き込んで用意する必要がある。
 
 どの画面で離脱したかは、`app_sessions.last_screen`（`list`/`create`/`poll`。画面が変わるたびに上書き）で分かる。セッション終了時点の値がそのまま離脱画面になる。
 

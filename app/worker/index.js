@@ -207,7 +207,8 @@ async function callback(request, env, url) {
 async function me(request, env) {
   const s = await session(request, env);
   if (!s) return json({ authenticated: false }, 200);
-  return json({ authenticated: true, user_id: s.uid });
+  const row = await env.DB.prepare("SELECT role FROM users WHERE user_id = ?").bind(s.uid).first();
+  return json({ authenticated: true, user_id: s.uid, role: (row && row.role) || "user" });
 }
 
 /**
@@ -283,9 +284,12 @@ async function postSession(request, env) {
   const stale = !row || row.ended_at !== null || (now - row.last_activity_at) > SESSION_GAP_MS;
 
   if (!stale) {
+    // poll_id は「今いる画面」に合わせて毎回上書きする（開始時点だけの記録にしない）。
+    // 投票詳細ページ以外にいる時はnullにして、「どのpollの詳細ページで離脱したか」を
+    // last_screen='poll' と組み合わせて特定できるようにする。
     await env.DB.prepare(
-      "UPDATE app_sessions SET last_activity_at = ?, last_screen = COALESCE(?, last_screen) WHERE id = ?"
-    ).bind(now, screen, existingId).run();
+      "UPDATE app_sessions SET last_activity_at = ?, last_screen = COALESCE(?, last_screen), poll_id = ? WHERE id = ?"
+    ).bind(now, screen, body.poll_id || null, existingId).run();
     return json({ ok: true, session_id: existingId });
   }
 
@@ -562,6 +566,63 @@ async function pollsRouter(request, env, url, path) {
   }
 }
 
+/* ========================= 管理者 ========================= */
+
+const ADMIN_TABLES = ["users", "polls", "app_sessions", "poll_events"];
+const ADMIN_ORDER  = { users: "first_seen_at", polls: "created_at", app_sessions: "id", poll_events: "id" };
+
+async function requireAdmin(request, env) {
+  const s = await session(request, env);
+  if (!s) return { error: json({ error: "ログインが必要です", login: "/auth/login" }, 401) };
+  const row = await env.DB.prepare("SELECT role FROM users WHERE user_id = ?").bind(s.uid).first();
+  if (!row || row.role !== "admin") return { error: json({ error: "管理者のみアクセスできます" }, 403) };
+  return { uid: s.uid };
+}
+
+function rowsToCsv(rows) {
+  if (!rows.length) return "";
+  const cols = Object.keys(rows[0]);
+  const esc = v => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return [cols.join(","), ...rows.map(r => cols.map(c => esc(r[c])).join(","))].join("\n");
+}
+
+/** テーブルの中身をそのまま返す。閲覧・CSVダウンロードともadminのみ（settingページ用）。 */
+async function adminTable(request, env, url, tableName) {
+  const auth = await requireAdmin(request, env);
+  if (auth.error) return auth.error;
+  if (!ADMIN_TABLES.includes(tableName)) return json({ error: "不明なテーブルです" }, 404);
+
+  const r = await env.DB.prepare(
+    `SELECT * FROM ${tableName} ORDER BY ${ADMIN_ORDER[tableName]} DESC LIMIT 1000`
+  ).all();
+
+  if (url.searchParams.get("format") === "csv") {
+    return new Response(rowsToCsv(r.results), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="${tableName}.csv"`
+      }
+    });
+  }
+  return json({ table: tableName, rows: r.results });
+}
+
+/** ユーザーのroleを変更する。admin自身しか実行できない。 */
+async function adminSetRole(request, env, targetUserId) {
+  const auth = await requireAdmin(request, env);
+  if (auth.error) return auth.error;
+
+  const b = await request.json().catch(() => ({}));
+  if (b.role !== "admin" && b.role !== "user") return json({ error: "roleはadminかuserを指定してください" }, 400);
+
+  const r = await env.DB.prepare("UPDATE users SET role = ? WHERE user_id = ?").bind(b.role, targetUserId).run();
+  if (!r.meta.changes) return json({ error: "ユーザーが見つかりません" }, 404);
+  return json({ ok: true, user_id: targetUserId, role: b.role });
+}
+
 /* ========================= 共有カード(OGP) ========================= */
 
 const escAttr = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -615,6 +676,10 @@ export default {
           : await listEvents(request, env, url);
       }
       if (path === "/api/sessions" && request.method === "POST") return await postSession(request, env);
+      const adminTableMatch = path.match(/^\/api\/admin\/tables\/([a-z_]+)$/);
+      if (adminTableMatch && request.method === "GET") return await adminTable(request, env, url, adminTableMatch[1]);
+      const adminRoleMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/role$/);
+      if (adminRoleMatch && request.method === "POST") return await adminSetRole(request, env, decodeURIComponent(adminRoleMatch[1]));
       if (path.startsWith("/api/polls")) return await pollsRouter(request, env, url, path);
       if (path === "/auth/logout") {
         return new Response(null, { status: 302, headers: { location: "/", "set-cookie": setCookie(SESSION_COOKIE, "", 0) } });
