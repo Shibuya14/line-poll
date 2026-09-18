@@ -27,7 +27,10 @@ jobs:
 
       - run: npm ci
 
-      # D1は既に存在するので apply は差分がなければ何もしない。
+      # D1(poll-dev)は既にCloudflare側に存在するが、CIのterraform stateは
+      # 実行のたびにまっさらなので、先にimportしてから apply する(2回目以降も
+      # importはno-opなので毎回importしてよい)。importしないと「作成しようと
+      # したら既に存在する」で毎回落ちる。
       - name: terraform apply
         working-directory: app/infra
         env:
@@ -37,6 +40,8 @@ jobs:
           TF_VAR_env:           dev
         run: |
           terraform init
+          terraform import cloudflare_d1_database.poll \
+            "${TF_VAR_account_id}/3d824ac3-9e2d-43a7-8b38-fa7d312a60e2" || true
           terraform apply -auto-approve
 
       - name: generate wrangler.jsonc
