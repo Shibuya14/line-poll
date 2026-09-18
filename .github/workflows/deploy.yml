@@ -10,6 +10,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # ワークフロー以外の全ファイル(package.json, infra/, scripts/, wrangler.jsonc等)はapp/配下にある。
+    defaults:
+      run:
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
 
@@ -25,11 +29,12 @@ jobs:
 
       # D1は既に存在するので apply は差分がなければ何もしない。
       - name: terraform apply
-        working-directory: infra
+        working-directory: app/infra
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_account_id:    ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TF_VAR_env:           prod
+          # poll-dev(実際に使っているWorker/D1)をそのまま自動デプロイの対象にする。
+          TF_VAR_env:           dev
         run: |
           terraform init
           terraform apply -auto-approve
