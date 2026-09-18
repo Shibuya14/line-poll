@@ -535,6 +535,33 @@ async function closePoll(request, env, poll, uid) {
   return json({ ok: true, poll: await attachVoterNames(env, shape(fresh, await tally(env, poll.id), uid)) });
 }
 
+/**
+ * 選択肢の追加(allow_add_optionが立っている投票のみ)。
+ * 誰でも追加できる(作成者限定ではない) — 参加者どうしで選択肢を出し合う機能のため。
+ */
+async function addOption(request, env, poll, uid) {
+  if (poll.closed_at)          return json({ error: "この投票は終了しています" }, 409);
+  if (!poll.allow_add_option)  return json({ error: "選択肢の追加は許可されていません" }, 403);
+
+  const b = await request.json().catch(() => ({}));
+  const label = String(b.label || "").trim();
+  if (!label)                      return json({ error: "選択肢を入力してください" }, 400);
+  if (poll.options.length >= 20)   return json({ error: "選択肢が多すぎます" }, 400);
+
+  const nextNum = poll.options.reduce((max, o) => {
+    const m = /^o(\d+)$/.exec(o.id);
+    return m ? Math.max(max, +m[1]) : max;
+  }, 0) + 1;
+  const newOpt = { id: "o" + nextNum, label };
+  const options = poll.options.concat([newOpt]);
+
+  await env.DB.prepare("UPDATE polls SET options_json = ? WHERE id = ?").bind(JSON.stringify(options), poll.id).run();
+  await record(env, poll.id, uid, "option_added", { id: newOpt.id, label }, evtOpts(b));
+
+  const fresh = await loadPoll(env, poll.id);
+  return json({ ok: true, poll: await attachVoterNames(env, shape(fresh, await tally(env, poll.id), uid)) });
+}
+
 /** 生ログのCSV。作成者のみ。分析はここから始める。 */
 async function exportCsv(env, poll, uid) {
   if (poll.created_by !== uid) return new Response("作成者のみ取得できます", { status: 403 });
@@ -591,6 +618,7 @@ async function pollsRouter(request, env, url, path) {
                                ? withdrawVote(request, env, poll, uid)
                                : castVote(request, env, poll, uid);
     case "/close":      return closePoll(request, env, poll, uid);
+    case "/options":    return addOption(request, env, poll, uid);
     case "/export.csv": return exportCsv(env, poll, uid);
     default:            return json({ error: "見つかりません" }, 404);
   }
