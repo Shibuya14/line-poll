@@ -408,6 +408,36 @@ function shape(poll, votes, uid) {
   };
 }
 
+/**
+ * shape() が返す options[].voters（userIdの配列）に display_name/picture_url を載せる。
+ * 匿名投票では voters 自体が null なので何もしない。
+ * 投票した人一覧画面（設計書には無いが、選択肢の人数からドリルダウンする導線）のため。
+ */
+async function attachVoterNames(env, shaped) {
+  const ids = new Set();
+  shaped.options.forEach(o => { if (Array.isArray(o.voters)) o.voters.forEach(id => ids.add(id)); });
+  if (!ids.size) return shaped;
+
+  const idList = [...ids];
+  const placeholders = idList.map(() => "?").join(",");
+  const r = await env.DB.prepare(
+    `SELECT user_id, display_name, picture_url FROM users WHERE user_id IN (${placeholders})`
+  ).bind(...idList).all();
+  const info = new Map(r.results.map(u => [u.user_id, u]));
+
+  shaped.options = shaped.options.map(o => {
+    if (!Array.isArray(o.voters)) return o;
+    return Object.assign({}, o, {
+      voters: o.voters.map(id => ({
+        user_id: id,
+        display_name: (info.get(id) && info.get(id).display_name) || null,
+        picture_url: (info.get(id) && info.get(id).picture_url) || null
+      }))
+    });
+  });
+  return shaped;
+}
+
 async function listPolls(env, uid) {
   const r = await env.DB.prepare("SELECT * FROM polls ORDER BY created_at DESC LIMIT 100").all();
   const out = [];
@@ -473,7 +503,7 @@ async function castVote(request, env, poll, uid) {
   const prev = votes.get(uid) || null;
   const same = prev && prev.length === picked.length && prev.every(x => picked.includes(x));
 
-  if (same) return json({ ok: true, unchanged: true, poll: shape(poll, votes, uid) });
+  if (same) return json({ ok: true, unchanged: true, poll: await attachVoterNames(env, shape(poll, votes, uid)) });
 
   // 本人のこの行動が反映される直前の投票者数（本人を含まない）。
   const voterCount = votes.size - (prev ? 1 : 0);
@@ -481,7 +511,7 @@ async function castVote(request, env, poll, uid) {
   if (prev) await record(env, poll.id, uid, "vote_changed", { from: prev, to: picked }, opts);
   else      await record(env, poll.id, uid, "vote_cast",    { to: picked }, opts);
 
-  return json({ ok: true, poll: shape(poll, await tally(env, poll.id), uid) });
+  return json({ ok: true, poll: await attachVoterNames(env, shape(poll, await tally(env, poll.id), uid)) });
 }
 
 async function withdrawVote(request, env, poll, uid) {
@@ -491,7 +521,7 @@ async function withdrawVote(request, env, poll, uid) {
   if (!votes.has(uid)) return json({ error: "まだ投票していません" }, 400);
   // 取り消す直前の投票者数（本人を含まない。他の定義と揃える）。
   await record(env, poll.id, uid, "vote_withdrawn", { from: votes.get(uid) }, { ...evtOpts(b), voterCount: votes.size - 1 });
-  return json({ ok: true, poll: shape(poll, await tally(env, poll.id), uid) });
+  return json({ ok: true, poll: await attachVoterNames(env, shape(poll, await tally(env, poll.id), uid)) });
 }
 
 async function closePoll(request, env, poll, uid) {
@@ -502,7 +532,7 @@ async function closePoll(request, env, poll, uid) {
   await env.DB.prepare("UPDATE polls SET closed_at = ? WHERE id = ?").bind(ts, poll.id).run();
   await record(env, poll.id, uid, "poll_closed", {}, evtOpts(b));
   const fresh = await loadPoll(env, poll.id);
-  return json({ ok: true, poll: shape(fresh, await tally(env, poll.id), uid) });
+  return json({ ok: true, poll: await attachVoterNames(env, shape(fresh, await tally(env, poll.id), uid)) });
 }
 
 /** 生ログのCSV。作成者のみ。分析はここから始める。 */
@@ -555,7 +585,7 @@ async function pollsRouter(request, env, url, path) {
   const action = m[2] || "";
 
   switch (action) {
-    case "":            return json({ poll: shape(poll, await tally(env, poll.id), uid) });
+    case "":            return json({ poll: await attachVoterNames(env, shape(poll, await tally(env, poll.id), uid)) });
     case "/publish":    return publishPoll(request, env, poll, uid);
     case "/vote":       return request.method === "DELETE"
                                ? withdrawVote(request, env, poll, uid)

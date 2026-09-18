@@ -88,9 +88,19 @@
   .opt .lab{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
   .opt .lab .txt{ font-size:16px; font-weight:500; color:#111; word-break:break-word; }
   .opt .lab .cnt{ font-size:16px; font-weight:700; color:#111; font-variant-numeric:tabular-nums; }
+  .opt .lab .cnt.clickable{ cursor:pointer; text-decoration:underline; text-underline-offset:3px; text-decoration-color:#D8D8D8; }
   .bar{ display:block; height:7px; border-radius:4px; background:#EFEFEF; margin-top:9px; overflow:hidden; }
   .bar span{ display:block; height:100%; background:#E8623F; border-radius:4px; width:0; transition:width .32s ease; }
   @media (prefers-reduced-motion:reduce){ .bar span{ transition:none; } }
+
+  .voter-row{ display:flex; align-items:center; gap:13px; padding:11px 0; border-bottom:1px solid #F5F5F5; }
+  .voter-row:last-child{ border-bottom:none; }
+  .voter-ava{
+    width:38px; height:38px; border-radius:50%; flex:none; overflow:hidden;
+    display:grid; place-items:center; color:#fff; font-size:15px; font-weight:700;
+  }
+  .voter-ava img{ width:100%; height:100%; object-fit:cover; }
+  .voter-name{ font-size:15px; color:#111; word-break:break-word; }
 
   .cr-tabs{ display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #EEE; margin:0 -20px; }
   .cr-tabs div{ text-align:center; padding:13px 0; font-size:15.5px; font-weight:500; color:#BDBDBD; }
@@ -165,6 +175,7 @@ const S = {
   activePoll: null,   // shape() の結果
   activePollId: null,
   selection: undefined,
+  votersOptId: null,  // "投票した人一覧"画面で見ている選択肢
   draft: null,
   dialog: false,
   errorMsg: "",
@@ -395,11 +406,14 @@ function renderPoll(){
   p.options.forEach(o => {
     const on = sel === o.id;
     const w = reveal ? Math.round((o.count||0) / total * 100) : 0;
-    // 表示名を保存していないため、参加者個人を示すチップは出さない(件数・バーのみ)。
+    // 投票者一覧が見られるのは匿名投票でない場合のみ(voters配列がある時)。
+    const drillable = reveal && Array.isArray(o.voters);
+    const cnt = reveal
+      ? '<span class="cnt'+(drillable?" clickable":"")+'"'+(drillable?' data-voters="'+o.id+'"':'')+'>'+(o.count||0)+'</span>'
+      : '';
     opts += '<div class="opt'+(closed?" locked":"")+'" data-opt="'+o.id+'">'+
       '<span class="radio'+(on?" on":"")+'">'+(on?icCheck:"")+'</span>'+
-      '<span class="lab-wrap"><span class="lab"><span class="txt">'+esc(o.label)+'</span>'+
-      (reveal ? '<span class="cnt">'+(o.count||0)+'</span>' : '')+'</span>'+
+      '<span class="lab-wrap"><span class="lab"><span class="txt">'+esc(o.label)+'</span>'+cnt+'</span>'+
       (reveal ? '<span class="bar"><span style="width:'+w+'%"></span></span>' : '')+
       '</span></div>';
   });
@@ -431,6 +445,34 @@ function renderPoll(){
       '<button class="ln-btn green" data-act="end">終了</button></div></div></div>';
   }
   $app.innerHTML = head + body + foot + extra;
+}
+
+/* 投票した人一覧: アイコン画像が無い人向けの、名前から決まる色付き丸アイコン */
+const AVA_COLORS = ["#B98EE0","#5FAE71","#4EA8DE","#E8623F","#E0B23E","#7C83E0","#4EBFA0","#E07CA5"];
+function avatarColor(id){
+  let h = 0;
+  for (let i=0;i<id.length;i++) h = (h*31 + id.charCodeAt(i)) >>> 0;
+  return AVA_COLORS[h % AVA_COLORS.length];
+}
+function voterRow(v){
+  const name = v.display_name || "名前未取得";
+  const ava = v.picture_url
+    ? '<img src="'+esc(v.picture_url)+'" alt="">'
+    : esc(name.trim().charAt(0) || "?");
+  const style = v.picture_url ? "" : ' style="background:'+avatarColor(v.user_id)+'"';
+  return '<div class="voter-row"><span class="voter-ava"'+style+'>'+ava+'</span><span class="voter-name">'+esc(name)+'</span></div>';
+}
+
+function renderVoters(){
+  const p = S.activePoll;
+  const opt = p.options.find(o => o.id === S.votersOptId);
+  const voters = (opt && opt.voters) || [];
+  const head = '<div class="ph-head"><button class="ic" data-act="backtopoll" aria-label="戻る">'+icBack+'</button>'+
+               '<div class="ttl">'+esc(opt ? opt.label : "")+'</div><span></span></div>';
+  const body = voters.length
+    ? '<div class="ph-body">'+voters.map(voterRow).join("")+'</div>'
+    : '<div class="ph-body"><p class="admin-empty">まだ投票がありません</p></div>';
+  $app.innerHTML = head + body;
 }
 
 function renderLoading(){
@@ -514,6 +556,7 @@ function render(){
   if (S.screen === "list")     return renderList();
   if (S.screen === "create")   return renderCreate();
   if (S.screen === "poll")     return renderPoll();
+  if (S.screen === "voters")   return renderVoters();
   if (S.screen === "settings") return renderSettings();
 }
 
@@ -521,6 +564,13 @@ function render(){
 document.addEventListener("click", async ev => {
   const op = ev.target.closest("[data-open]");
   if (op){ go("/p/" + op.dataset.open); return; }
+
+  const cntEl = ev.target.closest("[data-voters]");
+  if (cntEl && S.screen === "poll"){
+    S.votersOptId = cntEl.dataset.voters;
+    S.screen = "voters"; render();
+    return;
+  }
 
   const optEl = ev.target.closest("[data-opt]");
   if (optEl && S.screen === "poll" && !S.activePoll.closed){
@@ -589,6 +639,8 @@ document.addEventListener("click", async ev => {
     }
 
     case "home": go("/"); break;
+
+    case "backtopoll": S.screen = "poll"; S.votersOptId = null; render(); break;
 
     case "cast": {
       btn.disabled = true;
