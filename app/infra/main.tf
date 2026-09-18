@@ -12,6 +12,14 @@ resource "cloudflare_d1_database" "poll" {
   # 参加者が日本にいるので、プライマリを東京側に寄せる。
   # 書き込みのレイテンシがそのまま時刻の測定誤差になるため、ここは効く。
   primary_location_hint = var.location_hint
+
+  # primary_location_hintは作成時にしか効かず、Cloudflare側は読み取り時に
+  # この値を返さない。そのためimport/refreshのたびに「差分あり→作り直し」
+  # と判定され、applyのたびに既存DBを破壊して再作成してしまう事故があった
+  # (2026-09-18)。既存DBに対しては常に無視する。
+  lifecycle {
+    ignore_changes = [primary_location_hint, read_replication]
+  }
 }
 
 # ------------------------------------------------------------------
