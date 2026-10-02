@@ -49,7 +49,7 @@ migrations/         D1のスキーマ。連番で積み上げる
   0003_admin_role.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
-public/ogp4.jpg      LINEに貼ったときのリンクカード画像
+public/ogp4.png      LINEに貼ったときのリンクカード画像
 wrangler.jsonc.tmpl 設定の雛形（実ファイルは自動生成）
 scripts/            terraform output → wrangler.jsonc の橋渡し
 Makefile            操作はすべてここから
