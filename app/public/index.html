@@ -44,6 +44,8 @@
     flex:none; display:flex; gap:11px; padding:14px 20px calc(env(safe-area-inset-bottom,0px) + 18px);
     background:#fff; border-top:1px solid #F5F5F5; position:sticky; bottom:0;
   }
+  /* 文字入力中(キーボード表示中)はフッターを隠す。sticky のままだとキーボード直上に張り付き、完了を誤タップしやすいため */
+  body.typing .ph-foot{ display:none; }
 
   .ln-btn{
     flex:1; border:none; border-radius:6px; padding:14px 10px; font-size:15.5px; font-weight:700;
@@ -1107,6 +1109,17 @@ document.addEventListener("input", ev => {
     }
     refreshDone();
   }
+});
+const isTextField = el => !!el && (el.tagName === "TEXTAREA" ||
+  (el.tagName === "INPUT" && /^(text|search|url|email|tel|number|password)$/.test(el.type)));
+document.addEventListener("focusin", ev => {
+  if (isTextField(ev.target)) document.body.classList.add("typing");
+});
+document.addEventListener("focusout", () => {
+  // 入力欄間の移動や再描画直後の再フォーカスでちらつかないよう、フォーカス確定後に判定する
+  setTimeout(() => {
+    if (!isTextField(document.activeElement)) document.body.classList.remove("typing");
+  }, 0);
 });
 document.addEventListener("change", async ev => {
   if (ev.target.classList.contains("db-select")){
