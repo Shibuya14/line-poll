@@ -47,6 +47,7 @@ migrations/         D1のスキーマ。連番で積み上げる
   0001_init.sql
   0002_log_extension.sql
   0003_admin_role.sql
+  0004_ogp_images.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
 public/ogp-<hash>.png LINEに貼ったときのリンクカード画像
@@ -81,6 +82,8 @@ make export-csv     # poll_events を CSV に書き出す
 ```
 
 ### リンクカード画像の差し替え
+
+ふだんは管理者画面の「カード画像」タブから差し替えます。下の `make ogp` は、管理者画面で一度も差し替えていないときに使われる初期画像を置き換える手段です。
 
 ```bash
 make ogp IMG=~/Downloads/card.png   # public/ogp-<ハッシュ>.png として置き、og:image と幅・高さを書き換える

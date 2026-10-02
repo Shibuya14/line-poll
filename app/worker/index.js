@@ -681,9 +681,134 @@ async function adminSetRole(request, env, targetUserId) {
   return json({ ok: true, user_id: targetUserId, role: b.role });
 }
 
+/* ---------- リンクカード画像(og:image) ---------- */
+
+const OGP_MAX_BYTES = 1024 * 1024;
+const OGP_EXT = { "image/png": "png", "image/jpeg": "jpg" };
+const OGP_COLS = "id, mime, width, height, uploaded_at, activated_at";
+
+const ogpImageUrl = (origin, img) => `${origin}/ogp/${img.id}.${OGP_EXT[img.mime]}`;
+// 確認用URL。画像ごとに別URLなので、LINEにまだ読まれていない状態でカードを確かめられる
+const ogpCheckUrl = (origin, img) => `${origin}/c/${img.id}`;
+
+/** 使用中の画像。未アップロード(またはマイグレーション前)なら null で、静的画像にフォールバックする */
+async function currentOgpImage(env) {
+  try {
+    return await env.DB.prepare(
+      `SELECT ${OGP_COLS} FROM ogp_images WHERE activated_at IS NOT NULL ORDER BY activated_at DESC LIMIT 1`
+    ).first();
+  } catch (e) { return null; }
+}
+
+function shapeOgp(origin, img, currentId) {
+  return {
+    id: img.id, width: img.width, height: img.height,
+    uploaded_at: img.uploaded_at, activated_at: img.activated_at,
+    url: ogpImageUrl(origin, img), check_url: ogpCheckUrl(origin, img),
+    current: img.id === currentId
+  };
+}
+
+/** 管理者画面用: 使用中の画像と、これまでにアップロードした画像の一覧 */
+async function adminListOgp(request, env, url) {
+  const auth = await requireAdmin(request, env);
+  if (auth.error) return auth.error;
+  const cur = await currentOgpImage(env);
+  const r = await env.DB.prepare(`SELECT ${OGP_COLS} FROM ogp_images ORDER BY uploaded_at DESC LIMIT 50`).all();
+  return json({ images: r.results.map(img => shapeOgp(url.origin, img, cur && cur.id)) });
+}
+
+/**
+ * 画像をアップロードして使用中にする。本文は画像のバイト列そのもの。
+ * 幅・高さはブラウザ側で読んだ値を ?width=&height= で受け取る（Workerで画像を解析しないため）。
+ */
+async function adminUploadOgp(request, env, url) {
+  const auth = await requireAdmin(request, env);
+  if (auth.error) return auth.error;
+
+  const mime = (request.headers.get("content-type") || "").split(";")[0].trim();
+  if (!OGP_EXT[mime]) return json({ error: "PNGかJPEGの画像を選んでください" }, 400);
+  const width = parseInt(url.searchParams.get("width"), 10);
+  const height = parseInt(url.searchParams.get("height"), 10);
+  if (!(width > 0 && height > 0)) return json({ error: "画像のサイズが読み取れません" }, 400);
+
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength) return json({ error: "画像が空です" }, 400);
+  if (bytes.byteLength > OGP_MAX_BYTES) return json({ error: "画像は1MB以下にしてください" }, 400);
+
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const id = [...digest].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 12);
+  const now = nowMs();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO ogp_images (id, mime, width, height, bytes, uploaded_by, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).bind(id, mime, width, height, bytes, auth.uid, now),
+    env.DB.prepare("UPDATE ogp_images SET activated_at = ? WHERE id = ?").bind(now, id)
+  ]);
+  const img = await env.DB.prepare(`SELECT ${OGP_COLS} FROM ogp_images WHERE id = ?`).bind(id).first();
+  return json({ image: shapeOgp(url.origin, img, id) });
+}
+
+/** 過去にアップロードした画像を使用中に戻す */
+async function adminActivateOgp(request, env, url, id) {
+  const auth = await requireAdmin(request, env);
+  if (auth.error) return auth.error;
+  const r = await env.DB.prepare("UPDATE ogp_images SET activated_at = ? WHERE id = ?").bind(nowMs(), id).run();
+  if (!r.meta.changes) return json({ error: "画像が見つかりません" }, 404);
+  const img = await env.DB.prepare(`SELECT ${OGP_COLS} FROM ogp_images WHERE id = ?`).bind(id).first();
+  return json({ image: shapeOgp(url.origin, img, id) });
+}
+
+/** /ogp/:id.(png|jpg) 画像本体。idは内容のハッシュなので、ずっとキャッシュしてよい */
+async function serveOgpImage(env, id) {
+  const row = await env.DB.prepare("SELECT mime, bytes FROM ogp_images WHERE id = ?").bind(id).first();
+  if (!row) return new Response("Not Found", { status: 404 });
+  return new Response(new Uint8Array(row.bytes), {
+    headers: { "content-type": row.mime, "cache-control": "public, max-age=31536000, immutable" }
+  });
+}
+
 /* ========================= 共有カード(OGP) ========================= */
 
 const escAttr = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/** index.html の og:image と幅・高さを、指定の画像に差し替える */
+function withOgImage(html, origin, img) {
+  if (!img) return html;
+  return html
+    .replace(/(<meta property="og:image" content=")[^"]*(")/, `$1${escAttr(ogpImageUrl(origin, img))}$2`)
+    .replace(/(<meta property="og:image:width" content=")[^"]*(")/, `$1${img.width}$2`)
+    .replace(/(<meta property="og:image:height" content=")[^"]*(")/, `$1${img.height}$2`);
+}
+
+/**
+ * トップ(/)を静的なindex.htmlのまま返すと、管理者画面で差し替えたリンクカード画像が
+ * 反映されない。og:imageだけ使用中の画像に差し替えて返す。
+ */
+async function homeCard(request, env, url) {
+  const assetRes = await env.ASSETS.fetch(new Request(new URL("/", url), request));
+  if (!assetRes.ok) return assetRes;
+  const html = withOgImage(await assetRes.text(), url.origin, await currentOgpImage(env));
+  return new Response(html, { status: assetRes.status, headers: assetRes.headers });
+}
+
+/**
+ * /c/:imageId 確認用URL。その画像をog:imageにしたトップページを返す。
+ * LINEはURLごとにカードをキャッシュするので、使ったことのないこのURLを貼れば
+ * 差し替えた画像のカードをすぐ確かめられる。人が開いた場合は画面側で / に置き換える。
+ */
+async function checkCard(request, env, url, id) {
+  const assetRes = await env.ASSETS.fetch(new Request(new URL("/", url), request));
+  if (!assetRes.ok) return assetRes;
+  let img = null;
+  try {
+    img = await env.DB.prepare(`SELECT ${OGP_COLS} FROM ogp_images WHERE id = ?`).bind(id).first();
+  } catch (e) { /* 取れなければ静的画像のまま */ }
+  const html = withOgImage(await assetRes.text(), url.origin, img)
+    .replace(/(<meta property="og:url" content=")[^"]*(")/, `$1${escAttr(url.origin + "/c/" + id)}$2`);
+  return new Response(html, { status: assetRes.status, headers: assetRes.headers });
+}
 
 /**
  * /p/:id はSPAのindex.htmlをそのまま返すだけだと、LINEにURLを貼った時の
@@ -710,7 +835,7 @@ async function pollShareCard(request, env, url, id) {
     .replace(/(<meta property="og:description" content=")[^"]*(")/, `$1タップして投票に参加$2`)
     .replace(/(<meta property="og:url" content=")[^"]*(")/, `$1${shareUrl}$2`);
 
-  return new Response(injected, {
+  return new Response(withOgImage(injected, url.origin, await currentOgpImage(env)), {
     status: assetRes.status,
     headers: assetRes.headers
   });
@@ -738,12 +863,24 @@ export default {
       if (adminTableMatch && request.method === "GET") return await adminTable(request, env, url, adminTableMatch[1]);
       const adminRoleMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/role$/);
       if (adminRoleMatch && request.method === "POST") return await adminSetRole(request, env, decodeURIComponent(adminRoleMatch[1]));
+      if (path === "/api/admin/ogp") {
+        return request.method === "POST"
+          ? await adminUploadOgp(request, env, url)
+          : await adminListOgp(request, env, url);
+      }
+      const adminOgpMatch = path.match(/^\/api\/admin\/ogp\/([0-9a-f]+)\/activate$/);
+      if (adminOgpMatch && request.method === "POST") return await adminActivateOgp(request, env, url, adminOgpMatch[1]);
       if (path.startsWith("/api/polls")) return await pollsRouter(request, env, url, path);
       if (path === "/auth/logout") {
         return new Response(null, { status: 302, headers: { location: "/", "set-cookie": setCookie(SESSION_COOKIE, "", 0) } });
       }
       const shareMatch = path.match(/^\/p\/([A-Za-z0-9_-]+)$/);
       if (shareMatch && request.method === "GET") return await pollShareCard(request, env, url, shareMatch[1]);
+      if (path === "/" && request.method === "GET") return await homeCard(request, env, url);
+      const checkMatch = path.match(/^\/c\/([0-9a-f]+)$/);
+      if (checkMatch && request.method === "GET") return await checkCard(request, env, url, checkMatch[1]);
+      const ogpMatch = path.match(/^\/ogp\/([0-9a-f]+)\.(png|jpg)$/);
+      if (ogpMatch && request.method === "GET") return await serveOgpImage(env, ogpMatch[1]);
     } catch (e) {
       return json({ error: e.message, stack: e.stack }, 500);
     }

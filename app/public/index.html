@@ -224,6 +224,17 @@
   .admin-table tr:last-child td{ border-bottom:none; }
   .admin-role-btn{ border:1px solid #DEDEDE; background:#fff; color:#111; border-radius:6px; padding:5px 10px; font-size:11.5px; cursor:pointer; font-family:inherit; }
   .admin-role-btn:active{ border-color:#06C755; color:#06C755; }
+  .settings-tabs{ grid-template-columns:repeat(3,1fr); }
+  .ogp-h{ font-size:13px; font-weight:700; color:#555; margin:20px 0 8px; }
+  .ogp-img{ display:block; width:100%; border:1px solid #EEE; border-radius:8px; background:#FAFAFA; }
+  .ogp-meta{ font-size:12px; color:#8E8E8E; margin-top:6px; }
+  .ogp-upload{ display:block; text-align:center; margin-top:14px; }
+  .ogp-upload input{ display:none; }
+  .ogp-url{ padding:0; margin-top:4px; }
+  .ogp-note{ font-size:12.5px; color:#8E8E8E; line-height:1.7; margin:8px 0 0; }
+  .ogp-hist{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #F5F5F5; }
+  .ogp-hist img{ flex:none; width:96px; border:1px solid #EEE; border-radius:6px; }
+  .ogp-hist .m{ flex:1; min-width:0; font-size:12px; color:#8E8E8E; }
 
   .toast{
     position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 90px); transform:translateX(-50%);
@@ -257,9 +268,11 @@ const S = {
   addOptionModal: false,  // 投票画面の「選択肢を追加」モーダルの表示状態
   addOptionValue: "",     // モーダル内で入力中のテキスト
   errorMsg: "",
-  settingsTab: "users",  // settingページのタブ: users | db
+  settingsTab: "users",  // settingページのタブ: users | db | ogp
   dbTable: "polls",      // DBタブで選択中のテーブル
   adminRows: [],
+  ogpImages: null,       // カード画像タブ: アップロード済み画像の一覧(新しい順)。null = 未取得
+  ogpUploading: false,
   calendarMonth: null,     // 「日付を選択」画面で表示中の月 { y, m(0始まり) }
   calendarSelected: null,  // 「日付を選択」画面で選択中の日付(Set<"YYYY-MM-DD">)
   calendarMode: "multi",   // multi(選択肢用) | single(終了日時用)
@@ -793,16 +806,93 @@ function renderDbTab(){
   return picker + tableHtml;
 }
 
+/** settingページ「カード画像」タブ: LINEに貼ったときのリンクカード画像(og:image)の差し替え */
+function renderOgpTab(){
+  if (!S.ogpImages) return '<p class="admin-empty">読み込み中…</p>';
+  const cur = S.ogpImages.find(i => i.current);
+  const fmt = ms => new Date(ms).toLocaleString("ja-JP", { month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit" });
+
+  let html = '<div class="ogp-h">使用中の画像</div>';
+  if (cur){
+    html += '<img class="ogp-img" src="'+esc(cur.url)+'" alt="">'+
+      '<div class="ogp-meta">'+cur.width+'×'+cur.height+' ・ '+fmt(cur.activated_at)+'に設定</div>';
+  } else {
+    // 未アップロードなら index.html に書かれた静的画像(make ogp で置いたもの)がそのまま使われている
+    const meta = document.querySelector('meta[property="og:image"]');
+    html += (meta ? '<img class="ogp-img" src="'+esc(meta.content)+'" alt="">' : '')+
+      '<div class="ogp-meta">初期画像（まだ管理者画面から差し替えていません）</div>';
+  }
+  html += '<label class="ln-btn green ogp-upload"'+(S.ogpUploading?' style="opacity:.6"':'')+'>'+
+    (S.ogpUploading ? "アップロード中…" : "画像を選んで差し替える")+
+    '<input type="file" id="ogpFile" accept="image/png,image/jpeg"'+(S.ogpUploading?" disabled":"")+'></label>'+
+    '<p class="ogp-note">PNGかJPEG、1MBまで。横1200×縦630がおすすめです。</p>';
+
+  if (cur){
+    html += '<div class="ogp-h">確認用URL</div>'+
+      '<div class="urlbar ogp-url"><span class="u">'+esc(cur.check_url)+'</span>'+
+      '<button data-act="copyogp" data-url="'+esc(cur.check_url)+'">コピー</button></div>'+
+      '<p class="ogp-note">LINEはURLごとにカードを覚えているため、トップや既存の投票のURLはしばらく古い画像のまま表示されることがあります。'+
+      'このURLは画像ごとに新しく発行されるので、トーク（自分だけのトークなど）に貼るとすぐに新しいカードを確認できます。開くと通常のトップ画面になります。</p>';
+  }
+
+  const past = S.ogpImages.filter(i => !i.current);
+  if (past.length){
+    html += '<div class="ogp-h">過去の画像</div>' + past.map(i =>
+      '<div class="ogp-hist"><img src="'+esc(i.url)+'" alt=""><div class="m">'+i.width+'×'+i.height+'<br>'+fmt(i.uploaded_at)+'</div>'+
+      '<button class="admin-role-btn" data-act="activateogp" data-id="'+esc(i.id)+'">これに戻す</button></div>'
+    ).join("");
+  }
+  return html;
+}
+
+async function loadOgpImages(){
+  try {
+    const r = await api("/api/admin/ogp");
+    S.ogpImages = r.images;
+  } catch(e){
+    S.ogpImages = [];
+    toast(e.message || "取得に失敗しました");
+  }
+  render();
+}
+
+function loadSettingsTab(){
+  if (S.settingsTab === "ogp") return loadOgpImages();
+  return loadAdminTable(S.settingsTab === "db" ? S.dbTable : "users");
+}
+
+/** 画像をそのままの形で送る。幅・高さはブラウザで読んでクエリで渡す(Workerでは画像を解析しない) */
+async function uploadOgp(file){
+  if (!/^image\/(png|jpeg)$/.test(file.type)) return toast("PNGかJPEGの画像を選んでください");
+  if (file.size > 1024 * 1024) return toast("画像は1MB以下にしてください");
+  S.ogpUploading = true; render();
+  try {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    await new Promise((ok, ng) => { img.onload = ok; img.onerror = () => ng(new Error("画像を読み込めません")); img.src = url; });
+    URL.revokeObjectURL(url);
+    const res = await fetch("/api/admin/ogp?width=" + img.naturalWidth + "&height=" + img.naturalHeight, {
+      method: "POST", headers: { "content-type": file.type }, body: file
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((body && body.error) || ("HTTP " + res.status));
+    toast("差し替えました。確認用URLをLINEに貼って確かめてください");
+  } catch(e){ toast(e.message); }
+  S.ogpUploading = false;
+  await loadOgpImages();
+}
+
 function renderSettings(){
   const tab = S.settingsTab;
-  const tabs = '<div class="cr-tabs">'+
+  const tabs = '<div class="cr-tabs settings-tabs">'+
     '<div class="'+(tab==="users"?"on":"")+'" data-act="settingstab" data-tab="users">ユーザー管理</div>'+
     '<div class="'+(tab==="db"?"on":"")+'" data-act="settingstab" data-tab="db">DB</div>'+
+    '<div class="'+(tab==="ogp"?"on":"")+'" data-act="settingstab" data-tab="ogp">カード画像</div>'+
     '</div>';
 
   const head = '<div class="ph-head"><button class="ic" data-act="home" aria-label="一覧へ">'+icHome+'</button><div class="ttl">設定</div><span></span></div>';
 
-  const content = tab === "db" ? renderDbTab() : renderUserManageTab();
+  const content = tab === "db" ? renderDbTab() : tab === "ogp" ? renderOgpTab() : renderUserManageTab();
 
   $app.innerHTML = head + '<div class="ph-body">' + tabs + content + '</div>';
 }
@@ -1050,13 +1140,28 @@ document.addEventListener("click", async ev => {
     case "settings": {
       if (!S.me || S.me.role !== "admin") break;
       S.screen = "settings"; render();
-      await loadAdminTable(S.settingsTab === "db" ? S.dbTable : "users");
+      await loadSettingsTab();
       break;
     }
 
     case "settingstab": {
       S.settingsTab = btn.dataset.tab; render();
-      await loadAdminTable(S.settingsTab === "db" ? S.dbTable : "users");
+      await loadSettingsTab();
+      break;
+    }
+
+    case "copyogp": {
+      toast(copy(btn.dataset.url) ? "確認用URLをコピーしました" : "コピーできませんでした");
+      break;
+    }
+
+    case "activateogp": {
+      btn.disabled = true;
+      try {
+        await api("/api/admin/ogp/" + btn.dataset.id + "/activate", { method: "POST" });
+        toast("この画像に戻しました");
+        await loadOgpImages();
+      } catch(e){ toast(e.message); btn.disabled = false; }
       break;
     }
 
@@ -1122,6 +1227,10 @@ document.addEventListener("focusout", () => {
   }, 0);
 });
 document.addEventListener("change", async ev => {
+  if (ev.target.id === "ogpFile" && ev.target.files[0]){
+    await uploadOgp(ev.target.files[0]);
+    return;
+  }
   if (ev.target.classList.contains("db-select")){
     S.dbTable = ev.target.value;
     await loadAdminTable(S.dbTable);
@@ -1141,6 +1250,8 @@ document.addEventListener("visibilitychange", () => {
 
 /* ===================== 起動 ===================== */
 async function boot(){
+  // /c/:id はLINEにカードを確認させるためだけのURL。人が開いたらトップとして扱う
+  if (location.pathname.startsWith("/c/")) history.replaceState(null, "", "/");
   let me;
   try { me = await api("/api/me"); }
   catch(e){ me = { authenticated:false }; }
