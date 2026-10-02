@@ -49,6 +49,13 @@ deploy: ## Cloudflareへ配備
 tail: ## 本番のログを流し見る
 	npx wrangler tail
 
+## ---------- リンクカード ----------
+ogp: ## リンクカード画像を差し替える（make ogp IMG=画像のパス）
+	./scripts/set-ogp.sh "$(IMG)"
+
+ogp-check: ## 配備済みのog:タグと画像を確認（make ogp-check P=/p/投票ID も可）
+	./scripts/check-ogp.sh "$(P)"
+
 ## ---------- データ ----------
 export-csv: ## events を CSV に書き出す
 	@npx wrangler d1 execute $(DB_NAME) --remote --json \
@@ -61,4 +68,4 @@ export-csv: ## events を CSV に書き出す
 destroy: ## Terraformが作ったものを削除（D1のデータも消えます）
 	terraform -chdir=infra destroy
 
-.PHONY: help tf-init tf-plan tf-apply bootstrap config secrets migrate-local migrate dev deploy tail export-csv destroy
+.PHONY: help tf-init tf-plan tf-apply bootstrap config secrets migrate-local migrate dev deploy tail ogp ogp-check export-csv destroy

@@ -49,7 +49,7 @@ migrations/         D1のスキーマ。連番で積み上げる
   0003_admin_role.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
-public/ogp4.png      LINEに貼ったときのリンクカード画像
+public/ogp-<hash>.png LINEに貼ったときのリンクカード画像
 wrangler.jsonc.tmpl 設定の雛形（実ファイルは自動生成）
 scripts/            terraform output → wrangler.jsonc の橋渡し
 Makefile            操作はすべてここから
@@ -79,6 +79,17 @@ make deploy         # 配備
 make tail           # 本番のログを流し見る
 make export-csv     # poll_events を CSV に書き出す
 ```
+
+### リンクカード画像の差し替え
+
+```bash
+make ogp IMG=~/Downloads/card.png   # public/ogp-<ハッシュ>.png として置き、og:image と幅・高さを書き換える
+make deploy
+make ogp-check                      # 配備済みのog:タグを表示し、画像を開いて確認
+make ogp-check P=/p/<投票ID>        # 投票の共有URLのカードを確認
+```
+
+ファイル名に画像の中身のハッシュが入るので、差し替えのたびに画像のURLが変わります。LINEはURLごとにリンクカードをキャッシュするため、トーク上の表示がまだ古い場合は [Page Poker](https://poker.line.naver.jp/) でそのURLのキャッシュを消してください。
 
 スキーマを変えたくなったら、`migrations/0002_xxx.sql` を追加して `make migrate` します。**既存のファイルは書き換えないでください。** 適用済みの履歴が壊れます。
 
