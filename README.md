@@ -122,6 +122,8 @@ vote_cast / vote_changed / vote_withdrawn / poll_closed
 - 「DB」— テーブル選択のプルダウン（`users`/`polls`/`app_sessions`/`poll_events`）＋中身の表示＋CSVダウンロード
 - 「カード画像」— リンクカード画像（og:image）の差し替えと確認用URLの発行（下の「リンクプレビュー」参照）
 
+adminが投票の詳細画面を開くと、右上にゴミ箱アイコンが出て投票を削除できる。削除といっても行は消さず、`polls.deleted_at`/`deleted_by`を立てて一覧・詳細・共有URLから見えなくするだけ（`poll_events`も残り、削除操作自体も`type='poll_deleted'`として記録される）。分析では`deleted_at IS NOT NULL`の投票をテスト等として除外できる。誤って削除したときは、DBで`deleted_at`をNULLに戻せば元に戻る。
+
 サーバー側は`/api/admin/*`へのリクエストのたびにroleを再検証するので、一般ユーザーが直接叩いても弾かれる。最初の1人だけはsettingページを開ける人がまだいないため、DBに直接書き込んで用意する必要がある。設定アイコンとダウンロードアイコンはどちらも支給されたSVG（`fill="currentColor"`で埋め込み、ボタンの文字色に合わせて色が変わる）。
 
 どの画面で離脱したかは、`app_sessions.last_screen`（`list`/`create`/`poll`。画面が変わるたびに上書き）で分かる。セッション終了時点の値がそのまま離脱画面になる。

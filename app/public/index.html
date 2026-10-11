@@ -54,6 +54,7 @@
   .ln-btn.grey{ background:#F2F2F2; color:#3C3C3C; }
   .ln-btn.green{ background:#06C755; color:#fff; }
   .ln-btn.green[disabled]{ background:#BFE7CD; color:#fff; cursor:default; }
+  .ln-btn.red{ background:#E5484D; color:#fff; }
   .ln-btn.ghost{ background:#fff; color:#3C3C3C; border:1px solid #DDD; }
 
   .empty{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; min-height:60vh; text-align:center; }
@@ -192,6 +193,7 @@
   .modal-bg{ position:fixed; inset:0; background:rgba(0,0,0,.42); display:grid; place-items:center; padding:24px; z-index:20; }
   .modal{ background:#fff; border-radius:12px; padding:30px 22px 18px; width:100%; max-width:300px; text-align:center; }
   .modal p{ margin:0 0 22px; font-size:15.5px; color:#111; font-weight:500; }
+  .modal p.modal-sub{ margin:-12px 0 22px; font-size:12.5px; color:#8E8E8E; font-weight:400; line-height:1.7; }
   .modal .row{ display:flex; gap:11px; }
   .modal-in{
     width:100%; border:none; border-bottom:1.5px solid #E8E8E8; outline:none; text-align:left;
@@ -265,6 +267,7 @@ const S = {
   votersOptId: null,  // "投票した人一覧"画面で見ている選択肢
   draft: null,
   dialog: false,
+  deleteDialog: false,    // 投票画面の「削除しますか？」ダイアログ(adminのみ)
   addOptionModal: false,  // 投票画面の「選択肢を追加」モーダルの表示状態
   addOptionValue: "",     // モーダル内で入力中のテキスト
   errorMsg: "",
@@ -424,6 +427,7 @@ const icBack = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const icCheck= '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
 const icChevR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
 const icClose = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const icTrash = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/><path d="M10 11v5.5M14 11v5.5"/></svg>';
 const icPlus = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 /* Desktop/icons/setting-icon.svg, Desktop/icons/download-icon.svg をcurrentColorで埋め込み */
 const icGear = '<svg viewBox="0 0 512 512" fill="currentColor"><path d="M497.569,215.169l-55.341-13.064c-4.037-13.955-9.495-27.277-16.376-39.735l29.844-48.304c4.57-7.395,3.45-16.945-2.688-23.084l-31.992-31.991c-6.128-6.129-15.67-7.248-23.073-2.68l-48.286,29.854c-12.468-6.881-25.789-12.348-39.734-16.376l-13.064-55.368c-2-8.44-9.551-14.422-18.23-14.422h-45.24c-8.679,0-16.22,5.982-18.22,14.422L202.105,69.79c-13.955,4.028-27.276,9.478-39.735,16.376l-48.304-29.871c-7.386-4.551-16.945-3.441-23.084,2.697L58.992,90.974c-6.129,6.137-7.248,15.706-2.689,23.082l29.863,48.313c-6.881,12.458-12.349,25.78-16.367,39.716L14.422,215.15C5.982,217.169,0,224.701,0,233.389v45.231c0,8.679,5.982,16.239,14.422,18.229L69.8,309.914c4.028,13.945,9.486,27.257,16.367,39.707l-29.872,48.322c-4.551,7.394-3.441,16.954,2.697,23.101l31.982,31.973c6.138,6.147,15.706,7.256,23.082,2.688l48.322-29.872c12.469,6.89,25.79,12.349,39.726,16.367l13.064,55.368c2,8.468,9.541,14.431,18.22,14.431h45.24c8.679,0,16.23-5.964,18.23-14.431l13.064-55.368c13.936-4.018,27.258-9.477,39.708-16.367l48.313,29.863c7.403,4.57,16.945,3.45,23.092-2.688l31.982-31.992c6.128-6.128,7.248-15.688,2.678-23.083l-29.863-48.304c6.899-12.45,12.349-25.771,16.377-39.716l55.368-13.065c8.468-2,14.422-9.541,14.422-18.229V233.38C512,224.71,506.036,217.169,497.569,215.169z M255.995,397.319c-78.001,0-141.296-63.295-141.296-141.324c0-78.038,63.296-141.324,141.296-141.324c78.03,0,141.324,63.286,141.324,141.324C397.319,334.024,334.025,397.319,255.995,397.319z"/><path d="M256.005,180.507c-41.671,0-75.469,33.809-75.469,75.488c0,41.68,33.798,75.488,75.469,75.488c41.68,0,75.487-33.808,75.487-75.488C331.492,214.316,297.684,180.507,256.005,180.507z"/></svg>';
@@ -659,8 +663,11 @@ function renderPoll(){
   const sel = S.selection !== undefined ? S.selection : (p.my_vote || []);
   const total = Math.max(1, ...p.options.map(o => o.count || 0));
 
+  const isAdmin = S.me && S.me.role === "admin";
   const head = '<div class="ph-head"><button class="ic" data-act="home" aria-label="一覧へ">'+icHome+'</button>'+
-               '<div class="ttl">投票する</div><span></span></div>';
+               '<div class="ttl">投票する</div>'+
+               (isAdmin ? '<button class="ic" data-act="askdelete" aria-label="投票を削除">'+icTrash+'</button>' : '<span></span>')+
+               '</div>';
 
   let opts = "";
   p.options.forEach(o => {
@@ -706,6 +713,12 @@ function renderPoll(){
     extra += '<div class="modal-bg"><div class="modal"><p>投票を終了しますか？</p>'+
       '<div class="row"><button class="ln-btn grey" data-act="cancelend">キャンセル</button>'+
       '<button class="ln-btn green" data-act="end">終了</button></div></div></div>';
+  }
+  if (S.deleteDialog){
+    extra += '<div class="modal-bg"><div class="modal"><p>この投票を削除しますか？</p>'+
+      '<p class="modal-sub">一覧や共有URLから見えなくなります。投票の記録はDBに残ります。</p>'+
+      '<div class="row"><button class="ln-btn grey" data-act="canceldelete">キャンセル</button>'+
+      '<button class="ln-btn red" data-act="deletepoll">削除</button></div></div></div>';
   }
   if (S.addOptionModal){
     extra += '<div class="modal-bg"><div class="modal">'+
@@ -1178,6 +1191,18 @@ document.addEventListener("click", async ev => {
       break;
     }
 
+    case "askdelete": S.deleteDialog = true; render(); break;
+    case "canceldelete": S.deleteDialog = false; render(); break;
+    case "deletepoll": {
+      btn.disabled = true;
+      try {
+        await api("/api/polls/" + S.activePoll.id, { method:"DELETE", body: withEventMeta({}) });
+        S.deleteDialog = false;
+        toast("投票を削除しました");
+        go("/", true);
+      } catch(e){ toast(e.message); btn.disabled = false; }
+      break;
+    }
     case "askend": S.dialog = true; render(); break;
     case "cancelend": S.dialog = false; render(); break;
     case "end": {
