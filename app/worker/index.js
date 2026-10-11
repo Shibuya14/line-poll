@@ -349,8 +349,9 @@ async function record(env, pollId, userId, type, payload, opts = {}) {
   ).run();
 }
 
+/** 削除(非表示)済みの投票は見つからない扱いにする */
 async function loadPoll(env, id) {
-  const r = await env.DB.prepare("SELECT * FROM polls WHERE id = ?").bind(id).first();
+  const r = await env.DB.prepare("SELECT * FROM polls WHERE id = ? AND deleted_at IS NULL").bind(id).first();
   if (!r) return null;
   r.options = JSON.parse(r.options_json);
   return r;
@@ -439,7 +440,7 @@ async function attachVoterNames(env, shaped) {
 }
 
 async function listPolls(env, uid) {
-  const r = await env.DB.prepare("SELECT * FROM polls ORDER BY created_at DESC LIMIT 100").all();
+  const r = await env.DB.prepare("SELECT * FROM polls WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100").all();
   const out = [];
   for (const row of r.results) {
     row.options = JSON.parse(row.options_json);
@@ -536,6 +537,19 @@ async function closePoll(request, env, poll, uid) {
 }
 
 /**
+ * 投票の削除(管理者のみ)。行は消さず deleted_at を立てて非表示にする。
+ * 記録(polls / poll_events)は残るので、分析時に除外したり、deleted_at を戻して復活させたりできる。
+ */
+async function deletePoll(request, env, poll) {
+  const auth = await requireAdmin(request, env);
+  if (auth.error) return auth.error;
+  const b = await request.json().catch(() => ({}));
+  await env.DB.prepare("UPDATE polls SET deleted_at = ?, deleted_by = ? WHERE id = ?").bind(nowMs(), auth.uid, poll.id).run();
+  await record(env, poll.id, auth.uid, "poll_deleted", {}, evtOpts(b));
+  return json({ ok: true });
+}
+
+/**
  * 選択肢の追加(allow_add_optionが立っている投票のみ)。
  * 誰でも追加できる(作成者限定ではない) — 参加者どうしで選択肢を出し合う機能のため。
  */
@@ -612,7 +626,8 @@ async function pollsRouter(request, env, url, path) {
   const action = m[2] || "";
 
   switch (action) {
-    case "":            return json({ poll: await attachVoterNames(env, shape(poll, await tally(env, poll.id), uid)) });
+    case "":            if (request.method === "DELETE") return deletePoll(request, env, poll);
+                        return json({ poll: await attachVoterNames(env, shape(poll, await tally(env, poll.id), uid)) });
     case "/publish":    return publishPoll(request, env, poll, uid);
     case "/vote":       return request.method === "DELETE"
                                ? withdrawVote(request, env, poll, uid)
@@ -822,7 +837,7 @@ async function pollShareCard(request, env, url, id) {
 
   let title = "投票";
   try {
-    const row = await env.DB.prepare("SELECT title FROM polls WHERE id = ?").bind(id).first();
+    const row = await env.DB.prepare("SELECT title FROM polls WHERE id = ? AND deleted_at IS NULL").bind(id).first();
     if (row && row.title) title = row.title;
   } catch (e) { /* タイトルが取れなくても既定値でカードは出す */ }
 

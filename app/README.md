@@ -48,6 +48,7 @@ migrations/         D1のスキーマ。連番で積み上げる
   0002_log_extension.sql
   0003_admin_role.sql
   0004_ogp_images.sql
+  0005_poll_soft_delete.sql
 worker/index.js     API本体。依存パッケージなし
 public/index.html   実際に使う画面(LINE風UI)
 public/ogp-<hash>.png LINEに貼ったときのリンクカード画像
